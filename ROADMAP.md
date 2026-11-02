@@ -73,7 +73,8 @@ from what the radio advertises over Bluetooth. Design:
 
 ## Known small debts
 
-- [ ] The M5's position is read only at connect: it does not follow a move
+- [x] The M5's position is read only at connect: it does not follow a move
+  (now read again at each 15 s check)
 - [ ] Tiles that left the view stay in the download queue
 - [ ] Guest login replies do not name the node: one ping at a time
 - [ ] Maximum contact count not shown: meshcore-rs caps the firmware's

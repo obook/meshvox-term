@@ -92,6 +92,9 @@ pub(super) async fn session(
             }
             _ = tick.tick() => {
                 battery(radio, tx).await?;
+                // The radio moves its position with each GPS fix; only AppStart reads it back.
+                let me = radio.commands().lock().await.send_appstart().await?;
+                let _ = tx.send(FromRadio::SelfPos(pos_from_micro(me.adv_lat, me.adv_lon)));
                 if std::mem::take(&mut contacts_stale) {
                     names = contacts(radio, tx).await?;
                 }
