@@ -64,6 +64,8 @@ from what the radio advertises over Bluetooth. Design:
 
 - [x] README: build, pairing, usage, keys
 - [x] LICENSE file (GPL-3.0)
+- [x] MeshCore protocol notes, from the MeshVox app:
+  [docs/meshcore-protocol.md](docs/meshcore-protocol.md)
 - [ ] Offer our Bluetooth fixes to the meshcore-rs project, so `vendor/`
   can go
 - [x] Tag v0.1.0 and release notes
