@@ -41,6 +41,7 @@ tempfile = "3"
 
 # meshcore-rs 0.2.0 patched in src/meshcore/ble.rs: one BLE manager per process and an
 # unsubscribe before subscribe (every reconnect duplicated all notifications), a leftover
-# scan stopped before a new one, and ble_disconnect() (disconnect() leaves the link up).
+# scan stopped before a new one, and ble_disconnect() (disconnect() leaves the link up);
+# in src/reader.rs, the custom variables read in the firmware's "name:value,..." form.
 [patch.crates-io]
 meshcore-rs = { path = "vendor/meshcore-rs" }

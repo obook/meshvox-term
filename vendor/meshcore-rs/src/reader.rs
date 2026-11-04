@@ -399,11 +399,13 @@ impl MessageReader {
             }
 
             PacketType::CustomVars => {
-                // Parse key-value pairs
+                // Parse key-value pairs. The firmware (companion_radio MyMesh.cpp) sends
+                // "name:value" pairs separated by commas, e.g. "gps:1"; the "=" and line
+                // forms are kept for the original tests.
                 let mut vars = HashMap::new();
                 let text = String::from_utf8_lossy(payload);
-                for line in text.lines() {
-                    if let Some((key, value)) = line.split_once('=') {
+                for line in text.split([',', '\n']) {
+                    if let Some((key, value)) = line.split_once([':', '=']) {
                         vars.insert(key.to_string(), value.to_string());
                     }
                 }
@@ -1128,6 +1130,29 @@ mod tests {
             EventPayload::CustomVars(vars) => {
                 assert_eq!(vars.get("key1"), Some(&"value1".to_string()));
                 assert_eq!(vars.get("key2"), Some(&"value2".to_string()));
+            }
+            _ => panic!("Expected CustomVars payload"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_rx_custom_vars_firmware_format() {
+        let (reader, dispatcher) = create_reader();
+        let mut receiver = dispatcher.receiver();
+
+        let mut data = vec![PacketType::CustomVars as u8];
+        data.extend_from_slice(b"gps:1,other:x");
+
+        reader.handle_rx(data).await.unwrap();
+
+        let event = tokio::time::timeout(Duration::from_millis(100), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        match event.payload {
+            EventPayload::CustomVars(vars) => {
+                assert_eq!(vars.get("gps"), Some(&"1".to_string()));
+                assert_eq!(vars.get("other"), Some(&"x".to_string()));
             }
             _ => panic!("Expected CustomVars payload"),
         }
