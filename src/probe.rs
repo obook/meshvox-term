@@ -109,6 +109,12 @@ async fn meshcore(name: &str) -> anyhow::Result<()> {
                 me.adv_lon as f64 / 1e6
             );
         }
+        // The raw variables too: they show what the firmware really sends.
+        match cmd.get_custom_vars().await {
+            Ok(vars) => println!("vars     {vars:?}"),
+            Err(e) => println!("vars     not read: {e}"),
+        }
+        println!("advert   position {}", if me.adv_loc_policy != 0 { "shared" } else { "hidden" });
         println!("contacts {}", contacts.len());
         let now = chrono::Utc::now().timestamp();
         let mut list: Vec<_> = contacts.iter().collect();

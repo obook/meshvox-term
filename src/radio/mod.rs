@@ -57,6 +57,8 @@ pub struct MyRadio {
     pub tx_power: u8,
     pub max_tx_power: u8,
     pub shares_position: bool,
+    /// Whether the GPS receiver is on; None when the radio has none or did not say.
+    pub gps: Option<bool>,
     /// Meshtastic region and modem preset ("EU_868 LONG_FAST"), when it uses one.
     pub preset: Option<String>,
 }
@@ -190,4 +192,7 @@ pub struct Node {
     pub path_len: i8,
     /// The route's relay hashes.
     pub path: Vec<u8>,
+    /// Marked as a favorite on the radio (MeshCore: bit 0 of the contact flags, the one
+    /// the MeshVox app sets; Meshtastic: the node database's favorite flag).
+    pub favorite: bool,
 }

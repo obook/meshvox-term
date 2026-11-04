@@ -85,18 +85,40 @@ The map looks best in a terminal that shows images with the Kitty, Sixel
 or iTerm2 protocol, like Konsole. Other terminals get a coarser picture
 made of half blocks.
 
-## Keys
+## Tabs and keys
 
-- Tab: go from the contact list to the map, then to the input line
-- Arrows: pick a contact in the list, pan the map
-- `+` and `-`: zoom the map
-- Enter: send the message you typed
+The screen has four tabs, as in the MeshVox Android app:
+
+- **1 Chats**: the public channel and the conversations, latest first, with
+  their last message; the open conversation on the right
+- **2 Contacts**: the nodes, with the selected node's card. Four filters,
+  as in MeshVox: Contacts (people), Favorites, Repeaters, All (with my
+  radio), Contacts first; and the online, offline and total counts. The
+  Map tab's card and its `[` and `]` keys follow the filtered list: pick
+  Repeaters to ping a repeater. The favorites are the
+  ones set on the radio, from the MeshVox app for instance
+- **3 Map**: the map and the selected node's card
+- **4 Device**: my radio's card
+
+A node heard in the last hour is online: its name is in bold wherever it
+is written, and marked in the contact list.
+
+Keys:
+
+- `1` to `4`: open a tab
+- Up and Down: pick a conversation (Chats) or a node (Contacts)
+- Left and Right: pick a filter (Contacts)
+- Enter: write to the open conversation (Chats) or to the selected node
+  (Contacts); in the input line, send
+- Esc or Tab: leave the input line
 - PgUp and PgDn: scroll the conversation
+- Arrows: pan the map; `+` and `-`: zoom; `[` and `]`: previous or next
+  node (Map)
 - `p`: ping the selected node (MeshCore repeater or room), or trace the
-  route to it (Meshtastic)
+  route to it (Meshtastic), from the Contacts and Map tabs
 - `q` or Ctrl+C: quit
 
-Outside the input line only, `p` pings and `q` quits.
+Outside the input line only, the digits switch tabs and `q` quits.
 
 ## Files
 

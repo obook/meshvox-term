@@ -17,7 +17,7 @@ use ratatui_image::StatefulImage;
 use super::format::coord;
 use super::radar::{draw_radar, radar_px, scale};
 use super::{faint, panel, Theme};
-use crate::app::{App, Focus};
+use crate::app::App;
 use crate::map::{MapView, Pos};
 use crate::tiles::{compose, Icon, Look, Mark, Tiles};
 
@@ -60,7 +60,7 @@ impl MapState {
 
 /// The map panel: title, OpenStreetMap credit and the map image.
 pub(super) fn draw_map(frame: &mut Frame, app: &App, area: Rect, map: &mut MapState, theme: Theme) {
-    let conv = app.current_conv();
+    let conv = app.selected_conv();
     // The selected node's name and distance are in the node card.
     let (title, look) = match theme {
         Theme::Normal => ("Map".to_string(), Look::Plain),
@@ -79,7 +79,7 @@ pub(super) fn draw_map(frame: &mut Frame, app: &App, area: Rect, map: &mut MapSt
     } else {
         " (c) OpenStreetMap contributors ".to_string()
     };
-    let block = panel(theme, app.ascii, app.focus == Focus::Map, &title)
+    let block = panel(theme, app.ascii, true, &title)
         .title_bottom(Line::styled(bottom, faint(theme)).right_aligned());
     let inner = block.inner(area);
     frame.render_widget(block, area);

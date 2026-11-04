@@ -10,6 +10,7 @@ use crate::config::{MAX_TEXT_BYTES, SCROLL_STEP};
 use crate::map::FOCUS_ZOOM;
 use crate::history::MT_PUBLIC;
 use crate::radio::{Firmware, FromRadio, ToRadio};
+use super::Filter;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 const ALICE: &str = "a4cb8fcbd941";
@@ -46,7 +47,8 @@ fn type_text(app: &mut App, text: &str) {
     }
 }
 
-/// Connected app with Alice and a room, focus on the input, public channel open.
+/// Connected app with Alice and a room, focus on the input, public channel open, every
+/// node listed (All filter).
 fn connected() -> App {
     let mut app = App::new("MeshCore-bbok", vec![]);
     app.apply(FromRadio::Link(Link::Connected("MeshCore-bbok".into())));
@@ -54,29 +56,64 @@ fn connected() -> App {
         node(ALICE, "Alice", NodeKind::Chat, None),
         node("0102030405aa", "Salon", NodeKind::Room, None),
     ]));
-    app.focus = Focus::Input;
+    app.typing = true;
+    app.filter = Filter::All;
     app
+}
+
+#[test]
+fn the_contact_list_starts_on_the_people() {
+    let mut app = App::new("x", vec![]);
+    assert_eq!(app.filter, Filter::Contacts);
+    app.apply(FromRadio::MyRadio(my_radio()));
+    app.apply(FromRadio::Nodes(vec![
+        node("01", "Relay", NodeKind::Repeater, None),
+        node("02", "Alice", NodeKind::Chat, None),
+    ]));
+    assert_eq!(labels(&app), ["Alice"]);
 }
 
 fn labels(app: &App) -> Vec<String> {
     app.rows().into_iter().map(|r| r.label).collect()
 }
 
+fn chat_labels(app: &App) -> Vec<String> {
+    app.chats().into_iter().map(|r| r.label).collect()
+}
+
+fn incoming_at(conv: &str, text: &str, ts: i64) -> Record {
+    let Record::Msg(msg) = incoming(conv, text) else {
+        unreachable!()
+    };
+    Record::Msg(Msg { ts, ..msg })
+}
+
 #[test]
-fn public_first_then_nodes_by_name() {
+fn contacts_are_sorted_by_name() {
     let mut app = App::new("x", vec![]);
     app.apply(FromRadio::Nodes(vec![
         node("01", "bob", NodeKind::Chat, None),
         node("02", "Alice", NodeKind::Chat, None),
     ]));
-    assert_eq!(labels(&app), ["# Public", "Alice", "bob"]);
+    assert_eq!(labels(&app), ["Alice", "bob"]);
 }
 
 #[test]
-fn unknown_sender_gets_a_row() {
+fn chats_list_public_then_latest_first_with_the_last_message() {
+    let mut app = App::new("x", vec![]);
+    app.apply(FromRadio::Nodes(vec![node(ALICE, "Alice", NodeKind::Chat, None)]));
+    app.apply(FromRadio::Record(incoming_at("0102030405aa", "old", 10)));
+    app.apply(FromRadio::Record(incoming_at(ALICE, "new", 20)));
+    assert_eq!(chat_labels(&app), ["# Public", "Alice", "0102030405aa"]);
+    assert_eq!(app.chats()[1].detail, "x: new");
+}
+
+#[test]
+fn unknown_sender_gets_a_chat() {
     let mut app = App::new("x", vec![]);
     app.apply(FromRadio::Record(incoming(ALICE, "hi")));
-    assert_eq!(labels(&app), ["# Public", ALICE]);
+    assert_eq!(chat_labels(&app), ["# Public", ALICE]);
+    assert_eq!(labels(&app), Vec::<String>::new());
 }
 
 #[test]
@@ -97,6 +134,7 @@ fn history_is_loaded() {
 #[test]
 fn distance_or_dash() {
     let mut app = App::new("x", vec![]);
+    app.filter = Filter::All;
     app.apply(FromRadio::Nodes(vec![
         node(
             "01",
@@ -117,26 +155,37 @@ fn distance_or_dash() {
             }),
         ),
     ]));
-    assert_eq!(app.rows()[1].detail, "-");
+    assert_eq!(app.rows()[0].detail, "-");
     app.apply(FromRadio::SelfPos(Some(Pos {
         lat: 44.8,
         lon: -0.6,
     })));
-    assert_eq!(app.rows()[1].detail, "2.3 km");
-    assert_eq!(app.rows()[2].detail, "repeater");
+    assert_eq!(app.rows()[0].detail, "2.3 km");
+    assert_eq!(app.rows()[1].detail, "repeater");
 }
 
 #[test]
 fn unread_counts_and_clears() {
     let mut app = connected();
     app.apply(FromRadio::Record(incoming(ALICE, "hi")));
-    assert_eq!(app.rows()[1].unread, 1);
+    assert_eq!(app.chats()[1].unread, 1);
     app.apply(FromRadio::Record(incoming(PUBLIC, "seen")));
-    assert_eq!(app.rows()[0].unread, 0);
-    app.focus = Focus::Contacts;
+    assert_eq!(app.chats()[0].unread, 0);
+    app.typing = false;
     press(&mut app, KeyCode::Down);
     assert_eq!(app.current_conv(), ALICE);
-    assert_eq!(app.rows()[1].unread, 0);
+    assert_eq!(app.chats()[1].unread, 0);
+}
+
+#[test]
+fn a_message_for_the_open_chat_is_unread_on_another_tab() {
+    let mut app = connected();
+    app.typing = false;
+    press(&mut app, KeyCode::Char('3'));
+    app.apply(FromRadio::Record(incoming(PUBLIC, "while on the map")));
+    assert_eq!(app.chats()[0].unread, 1);
+    press(&mut app, KeyCode::Char('1'));
+    assert_eq!(app.chats()[0].unread, 0);
 }
 
 #[test]
@@ -172,7 +221,7 @@ fn enter_sends_to_the_open_conversation() {
         Some(ToRadio::SendPublic { text: "hi".into() })
     );
     assert_eq!(app.input, "");
-    app.selected = 1;
+    app.chat = ALICE.into();
     type_text(&mut app, "yo");
     assert_eq!(
         press(&mut app, KeyCode::Enter),
@@ -243,10 +292,10 @@ fn first_of_two_sends_fails() {
 #[test]
 fn failure_goes_back_to_its_conversation() {
     let mut app = connected();
-    app.selected = 1;
+    app.chat = ALICE.into();
     type_text(&mut app, "for Alice");
     press(&mut app, KeyCode::Enter);
-    app.selected = 0;
+    app.chat = PUBLIC.into();
     app.apply(failed(ALICE, "for Alice"));
     assert_eq!(
         (app.current_conv().as_str(), app.input.as_str()),
@@ -269,8 +318,7 @@ fn failure_while_typing_keeps_both_texts() {
 #[test]
 fn no_send_to_a_room() {
     let mut app = connected();
-    app.selected = 2;
-    assert_eq!(app.current_conv(), "0102030405aa");
+    app.chat = "0102030405aa".into();
     type_text(&mut app, "hi");
     assert_eq!(press(&mut app, KeyCode::Enter), None);
     assert_eq!(app.input, "hi");
@@ -284,7 +332,7 @@ fn no_send_to_a_room() {
 fn no_send_to_a_private_channel() {
     let mut app = connected();
     app.apply(FromRadio::Record(incoming("channel:1", "Bob: yo")));
-    app.selected = labels(&app).iter().position(|l| l == "channel:1").unwrap();
+    app.chat = "channel:1".into();
     type_text(&mut app, "hi");
     assert_eq!(press(&mut app, KeyCode::Enter), None);
     assert_eq!(
@@ -329,6 +377,7 @@ fn selecting_a_located_node_centers_map() {
             lon: -0.6,
         }),
     )]));
+    app.tab = Tab::Contacts;
     press(&mut app, KeyCode::Down);
     assert_eq!(
         app.view,
@@ -341,21 +390,26 @@ fn selecting_a_located_node_centers_map() {
 }
 
 #[test]
-fn tab_cycles_focus() {
+fn digits_open_the_tabs_and_tab_toggles_the_input() {
     let mut app = App::new("x", vec![]);
-    assert_eq!(app.focus, Focus::Contacts);
+    assert_eq!((app.tab, app.typing), (Tab::Chats, false));
+    for (key, tab) in [('2', Tab::Contacts), ('3', Tab::Map), ('4', Tab::Device), ('1', Tab::Chats)] {
+        press(&mut app, KeyCode::Char(key));
+        assert_eq!(app.tab, tab);
+    }
     press(&mut app, KeyCode::Tab);
-    assert_eq!(app.focus, Focus::Map);
-    press(&mut app, KeyCode::Tab);
-    assert_eq!(app.focus, Focus::Input);
-    press(&mut app, KeyCode::Tab);
-    assert_eq!(app.focus, Focus::Contacts);
+    assert!(app.typing);
+    type_text(&mut app, "2");
+    assert_eq!((app.tab, app.input.as_str()), (Tab::Chats, "2"));
+    press(&mut app, KeyCode::Esc);
+    assert!(!app.typing);
 }
 
 #[test]
 fn map_keys_zoom_and_pan() {
     let mut app = App::new("x", vec![]);
-    app.focus = Focus::Map;
+    app.typing = false;
+    app.tab = Tab::Map;
     let start = app.view;
     press(&mut app, KeyCode::Char('+'));
     assert_eq!(app.view.zoom, start.zoom + 1);
@@ -386,7 +440,8 @@ fn map_fits_located_nodes_until_the_user_moves_it() {
         "{:?}",
         app.view
     );
-    app.focus = Focus::Map;
+    app.typing = false;
+    app.tab = Tab::Map;
     press(&mut app, KeyCode::Char('-'));
     let moved = app.view;
     app.apply(FromRadio::SelfPos(Some(Pos {
@@ -401,7 +456,8 @@ fn q_types_in_input_and_quits_elsewhere() {
     let mut app = connected();
     press(&mut app, KeyCode::Char('q'));
     assert_eq!((app.input.as_str(), app.quit), ("q", false));
-    app.focus = Focus::Contacts;
+    app.typing = false;
+    app.tab = Tab::Contacts;
     press(&mut app, KeyCode::Char('q'));
     assert!(app.quit);
     let mut app = connected();
@@ -412,12 +468,12 @@ fn q_types_in_input_and_quits_elsewhere() {
 #[test]
 fn selection_follows_the_contact_when_list_changes() {
     let mut app = connected();
-    app.selected = 1;
+    app.selected = 0;
     app.apply(FromRadio::Nodes(vec![
         node("ffffffffffff", "Aaron", NodeKind::Chat, None),
         node(ALICE, "Alice", NodeKind::Chat, None),
     ]));
-    assert_eq!(app.current_conv(), ALICE);
+    assert_eq!(app.selected_conv(), ALICE);
 }
 
 #[test]
@@ -478,8 +534,9 @@ fn map_fits_only_the_nodes_near_me() {
 #[test]
 fn p_pings_the_selected_room_or_repeater() {
     let mut app = connected();
-    app.focus = Focus::Contacts;
-    app.selected = 2;
+    app.typing = false;
+    app.tab = Tab::Contacts;
+    app.selected = 1;
     let prefix = "0102030405aa";
     assert_eq!(
         press(&mut app, KeyCode::Char('p')),
@@ -494,8 +551,9 @@ fn p_pings_the_selected_room_or_repeater() {
 #[test]
 fn p_on_a_person_explains() {
     let mut app = connected();
-    app.focus = Focus::Map;
-    app.selected = 1;
+    app.typing = false;
+    app.tab = Tab::Map;
+    app.selected = 0;
     assert_eq!(press(&mut app, KeyCode::Char('p')), None);
     assert_eq!(
         app.notice.as_deref(),
@@ -514,8 +572,9 @@ fn p_types_in_the_input() {
 fn ping_offline_is_refused() {
     let mut app = connected();
     app.apply(FromRadio::Link(Link::Lost("x".into())));
-    app.focus = Focus::Contacts;
-    app.selected = 2;
+    app.typing = false;
+    app.tab = Tab::Contacts;
+    app.selected = 1;
     assert_eq!(press(&mut app, KeyCode::Char('p')), None);
     assert_eq!(app.notice.as_deref(), Some("Not connected, ping not sent"));
 }
@@ -549,8 +608,8 @@ fn my_radio() -> MyRadio {
 fn my_radio_row_comes_first_and_keeps_the_selection() {
     let mut app = connected();
     app.apply(FromRadio::MyRadio(my_radio()));
-    assert_eq!(labels(&app)[..2], ["bbok", "# Public"]);
-    assert_eq!(app.current_conv(), PUBLIC);
+    assert_eq!(labels(&app), ["bbok", "Alice", "Salon"]);
+    assert_eq!(app.selected_conv(), ALICE);
 }
 
 #[test]
@@ -562,20 +621,48 @@ fn selecting_my_radio_centers_the_map_on_me() {
     };
     app.apply(FromRadio::SelfPos(Some(me)));
     app.apply(FromRadio::MyRadio(my_radio()));
-    app.focus = Focus::Contacts;
+    app.typing = false;
+    app.tab = Tab::Contacts;
     press(&mut app, KeyCode::Up);
-    assert_eq!(app.current_conv(), MY_RADIO);
+    assert_eq!(app.selected_conv(), MY_RADIO);
     assert_eq!((app.view.lat, app.view.lon), (me.lat, me.lon));
 }
 
 #[test]
-fn no_message_to_my_own_radio() {
+fn enter_on_my_radio_opens_the_device_tab() {
     let mut app = connected();
     app.apply(FromRadio::MyRadio(my_radio()));
+    app.typing = false;
+    app.tab = Tab::Contacts;
     app.selected = 0;
-    type_text(&mut app, "hi");
     assert_eq!(press(&mut app, KeyCode::Enter), None);
-    assert_eq!(app.notice.as_deref(), Some("That is your own radio"));
+    assert_eq!(app.tab, Tab::Device);
+}
+
+#[test]
+fn enter_on_a_contact_opens_its_chat_ready_to_type() {
+    let mut app = connected();
+    app.typing = false;
+    app.tab = Tab::Contacts;
+    app.selected = 0;
+    press(&mut app, KeyCode::Enter);
+    assert_eq!((app.tab, app.typing), (Tab::Chats, true));
+    assert_eq!(app.current_conv(), ALICE);
+    assert_eq!(chat_labels(&app), ["# Public", "Alice"], "listed before its first message");
+}
+
+#[test]
+fn enter_on_a_room_explains_and_stays() {
+    let mut app = connected();
+    app.typing = false;
+    app.tab = Tab::Contacts;
+    app.selected = 1;
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.tab, Tab::Contacts);
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("Messages to a room are not supported")
+    );
 }
 
 #[test]
@@ -585,14 +672,15 @@ fn no_message_or_ping_to_my_own_id() {
     // An old conversation keyed by my own id, as the history can hold.
     app.apply(FromRadio::Record(incoming(&me.prefix, "old")));
     app.apply(FromRadio::MyRadio(me));
-    let index = app.rows().iter().position(|r| r.conv == "abcdef012345");
-    app.selected = index.expect("row for my own id");
+    app.chat = "abcdef012345".into();
     type_text(&mut app, "hi");
     assert_eq!(press(&mut app, KeyCode::Enter), None);
     assert_eq!(app.notice.as_deref(), Some("That is your own radio"));
     app.notice = None;
     app.input.clear();
-    app.focus = Focus::Contacts;
+    app.typing = false;
+    app.tab = Tab::Contacts;
+    app.selected = 0;
     assert_eq!(press(&mut app, KeyCode::Char('p')), None);
     assert_eq!(app.notice.as_deref(), Some("That is your own radio"));
 }
@@ -649,12 +737,14 @@ fn selecting_my_radio_fits_my_neighbours_in_the_real_map_size() {
         ..Default::default()
     }));
     app.set_map_px((360, 300));
-    app.focus = Focus::Map;
+    app.typing = false;
+    app.tab = Tab::Map;
     press(&mut app, KeyCode::Char('+'));
-    app.focus = Focus::Contacts;
+    app.typing = false;
+    app.tab = Tab::Contacts;
     app.selected = 1;
     press(&mut app, KeyCode::Up);
-    assert_eq!(app.current_conv(), MY_RADIO);
+    assert_eq!(app.selected_conv(), MY_RADIO);
     assert!(
         inside(app.view, me, (360, 300)) && inside(app.view, relay, (360, 300)),
         "{:?}",
@@ -683,7 +773,8 @@ fn a_new_map_size_refits_until_the_user_moves_the_map() {
         "{:?}",
         app.view
     );
-    app.focus = Focus::Map;
+    app.typing = false;
+    app.tab = Tab::Map;
     press(&mut app, KeyCode::Char('-'));
     let moved = app.view;
     app.set_map_px((900, 600));
@@ -691,7 +782,7 @@ fn a_new_map_size_refits_until_the_user_moves_the_map() {
 }
 
 fn convs(app: &App) -> Vec<String> {
-    app.rows().into_iter().map(|r| r.conv).collect()
+    app.chats().into_iter().map(|r| r.conv).collect()
 }
 
 #[test]
@@ -704,7 +795,7 @@ fn firmware_comes_from_the_last_history_record() {
 }
 
 #[test]
-fn rows_show_only_the_current_firmware() {
+fn chats_show_only_the_current_firmware() {
     let mut app = App::new(
         "x",
         vec![
@@ -717,7 +808,7 @@ fn rows_show_only_the_current_firmware() {
     assert_eq!(convs(&app), [PUBLIC, "a1b2c3d4e5f6"]);
     app.apply(FromRadio::Firmware(Firmware::Meshtastic));
     assert_eq!(convs(&app), [MT_PUBLIC, "mt:!0badcafe"]);
-    assert_eq!(labels(&app)[0], "# Public");
+    assert_eq!((chat_labels(&app)[0].as_str(), app.current_conv().as_str()), ("# Public", MT_PUBLIC));
 }
 
 #[test]
@@ -762,8 +853,9 @@ fn meshtastic() -> App {
 #[test]
 fn meshtastic_pings_any_node() {
     let mut app = meshtastic();
-    app.focus = Focus::Map;
-    app.selected = 1;
+    app.typing = false;
+    app.tab = Tab::Map;
+    app.selected = 0;
     assert_eq!(
         press(&mut app, KeyCode::Char('p')),
         Some(ToRadio::Ping {
@@ -776,7 +868,7 @@ fn meshtastic_pings_any_node() {
 #[test]
 fn meshtastic_sends_to_a_router() {
     let mut app = meshtastic();
-    app.selected = 2;
+    app.chat = "mt:!0000beef".into();
     type_text(&mut app, "hi");
     assert_eq!(
         press(&mut app, KeyCode::Enter),
@@ -785,4 +877,73 @@ fn meshtastic_sends_to_a_router() {
             text: "hi".into()
         })
     );
+}
+
+/// Alice (person, favorite), Bob (person), a repeater and a room, with my radio.
+fn filtered() -> App {
+    let mut app = connected();
+    app.apply(FromRadio::MyRadio(my_radio()));
+    app.apply(FromRadio::Nodes(vec![
+        Node {
+            favorite: true,
+            ..node(ALICE, "Alice", NodeKind::Chat, None)
+        },
+        node("0b0b0b0b0b0b", "Bob", NodeKind::Chat, None),
+        node("0102030405bb", "Relay", NodeKind::Repeater, None),
+        node("0102030405aa", "Salon", NodeKind::Room, None),
+    ]));
+    app.typing = false;
+    app.tab = Tab::Contacts;
+    app.filter = Filter::All;
+    app
+}
+
+#[test]
+fn filters_keep_what_meshvox_keeps() {
+    let mut app = filtered();
+    assert_eq!(labels(&app), ["bbok", "Alice", "Bob", "Relay", "Salon"]);
+    for (filter, want) in [
+        (Filter::Contacts, vec!["Alice", "Bob"]),
+        (Filter::Favorites, vec!["Alice"]),
+        (Filter::Repeaters, vec!["Relay"]),
+    ] {
+        app.filter = filter;
+        assert_eq!(labels(&app), want, "{filter:?}");
+    }
+}
+
+#[test]
+fn left_and_right_change_the_filter_and_keep_the_node() {
+    let mut app = filtered();
+    assert_eq!(app.filter, Filter::All);
+    app.selected = 1;
+    assert_eq!(app.selected_conv(), ALICE);
+    press(&mut app, KeyCode::Left);
+    assert_eq!(app.filter, Filter::Repeaters);
+    assert_eq!(app.selected, 0, "Alice is gone: first row");
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    assert_eq!(app.filter, Filter::All, "no wrap past the last filter");
+    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::Left);
+    app.selected = 0;
+    press(&mut app, KeyCode::Left);
+    press(&mut app, KeyCode::Left);
+    assert_eq!(app.filter, Filter::Contacts, "no wrap past the first one");
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.selected_conv(), "0b0b0b0b0b0b");
+    press(&mut app, KeyCode::Right);
+    assert_eq!(app.filter, Filter::Favorites);
+    assert_eq!(app.selected_conv(), ALICE, "Bob is no favorite: first row");
+}
+
+#[test]
+fn an_empty_filter_does_not_break_the_keys() {
+    let mut app = filtered();
+    app.apply(FromRadio::Nodes(vec![]));
+    app.filter = Filter::Favorites;
+    for code in [KeyCode::Down, KeyCode::Up, KeyCode::Enter, KeyCode::Char('p')] {
+        press(&mut app, code);
+    }
+    assert_eq!(app.selected_conv(), "");
 }

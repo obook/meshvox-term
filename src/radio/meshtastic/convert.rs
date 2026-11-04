@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use meshtastic::protobufs::config::device_config::Role;
 use meshtastic::protobufs::config::lo_ra_config::{ModemPreset, RegionCode};
+use meshtastic::protobufs::config::position_config::GpsMode;
 use meshtastic::protobufs::config::LoRaConfig;
 use meshtastic::protobufs::{
     mesh_packet::PayloadVariant, routing, DeviceMetadata, DeviceMetrics, HardwareModel, MeshPacket,
@@ -71,6 +72,16 @@ pub fn node(info: &NodeInfo) -> Node {
         heard: info.last_heard,
         path_len: info.hops_away.map_or(-1, |h| h.min(i8::MAX as u32) as i8),
         path: vec![],
+        favorite: info.is_favorite,
+    }
+}
+
+/// Whether the GPS receiver is on; None when the radio has none.
+pub fn gps_on(mode: GpsMode) -> Option<bool> {
+    match mode {
+        GpsMode::Enabled => Some(true),
+        GpsMode::Disabled => Some(false),
+        GpsMode::NotPresent => None,
     }
 }
 
@@ -133,6 +144,7 @@ pub fn my_radio(
         tx_power: lora.map_or(0, |l| l.tx_power.clamp(0, 255) as u8),
         max_tx_power: 0,
         shares_position: me.is_some_and(|m| m.position.is_some()),
+        gps: None,
         preset: lora.filter(|l| l.use_preset).map(|l| {
             let region = RegionCode::try_from(l.region).map_or("?", |r| r.as_str_name());
             let preset = ModemPreset::try_from(l.modem_preset).map_or("?", |p| p.as_str_name());

@@ -1,12 +1,12 @@
 //! app/update.rs
 //! apply(): the radio's updates (radio::FromRadio) into the application state, keeping the
-//! selection on its conversation and the map fitted to the nodes until the user moves it.
+//! selected contact and the open conversation, and the map fitted to the nodes until the user moves it.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
 //! Licence: GPL-3.0
 
-use super::App;
+use super::{App, Tab};
 use crate::config::FIT_RADIUS_KM;
 use crate::geo::{distance_km, Pos};
 use crate::history::Record;
@@ -15,9 +15,8 @@ use crate::radio::{FromRadio, Link};
 
 impl App {
     pub fn apply(&mut self, update: FromRadio) {
-        // Keep the selection on the same conversation when rows move.
-        let conv = self.current_conv();
-        let mut keep = conv.clone();
+        // Keep the selection on the same contact when rows move.
+        let mut keep = self.selected_conv();
         match update {
             FromRadio::Firmware(firmware) => {
                 if firmware != self.firmware {
@@ -27,7 +26,8 @@ impl App {
                     self.battery = None;
                     self.me = None;
                     self.pings.clear();
-                    keep = self.public_conv().into();
+                    self.chat = self.public_conv().into();
+                    keep = String::new();
                 }
             }
             FromRadio::Link(link) => {
@@ -45,7 +45,8 @@ impl App {
                 self.acked.insert(tag);
             }
             FromRadio::Record(Record::Msg(msg)) => {
-                if !msg.outgoing && msg.conv != conv {
+                let on_screen = self.tab == Tab::Chats && msg.conv == self.chat;
+                if !msg.outgoing && !on_screen {
                     *self.unread.entry(msg.conv.clone()).or_default() += 1;
                 }
                 self.msgs.push(msg);
@@ -61,14 +62,10 @@ impl App {
                 if self.input.is_empty() {
                     // Back to the conversation it was meant for, so Enter cannot send it elsewhere.
                     self.input = text;
-                    keep = failed;
+                    self.chat = failed;
                     self.notice = Some(format!("Send failed: {error}"));
                 } else {
-                    let label = self
-                        .rows()
-                        .into_iter()
-                        .find(|r| r.conv == failed)
-                        .map_or(failed, |r| r.label);
+                    let label = self.conv_label(&failed);
                     self.notice = Some(format!("Send to {label} failed: {error} - text: {text}"));
                 }
             }

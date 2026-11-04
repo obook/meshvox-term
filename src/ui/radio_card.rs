@@ -81,17 +81,23 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         Some(p) => field(theme, "POS", coord(p.lat, p.lon), text(theme)),
         None => field(theme, "POS", "UNKNOWN".into(), faint(theme)),
     });
-    // Whether my adverts carry the position.
+    // Whether my adverts carry the position, as MeshVox's "Position in adverts".
     lines.push(field(
         theme,
-        "GPS",
+        "ADVERT",
         if radio.shares_position {
-            "SHARED".into()
+            "POSITION SHARED".into()
         } else {
-            "HIDDEN".into()
+            "POSITION HIDDEN".into()
         },
         text(theme),
     ));
+    // Whether the GPS receiver looks for satellites.
+    lines.push(match radio.gps {
+        Some(true) => field(theme, "GPS", "ON".into(), text(theme)),
+        Some(false) => field(theme, "GPS", "OFF".into(), text(theme)),
+        None => field(theme, "GPS", "-".into(), faint(theme)),
+    });
     // shortcut: the maximum is not shown; meshcore-rs 0.2.0 caps the firmware's value at 255.
     lines.push(field(
         theme,

@@ -16,7 +16,7 @@ use meshcore_rs::parsing::hex_encode;
 use meshcore_rs::MeshCore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use super::convert::{channel_msg, contact_msg, lipo_percent, my_radio};
+use super::convert::{channel_msg, contact_msg, gps_from_vars, lipo_percent, my_radio};
 use super::link::now;
 use super::ping::ping;
 use super::{Battery, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, ToRadio};
@@ -39,7 +39,12 @@ pub(super) async fn session(
     if let Err(e) = &dev {
         tracing::info!("device query: {e}");
     }
-    let card = my_radio(&me, dev.as_ref().ok());
+    let mut card = my_radio(&me, dev.as_ref().ok());
+    // An older firmware may not answer: the GPS state is then unknown, not a link failure.
+    match radio.commands().lock().await.get_custom_vars().await {
+        Ok(vars) => card.gps = gps_from_vars(&vars),
+        Err(e) => tracing::info!("custom vars: {e}"),
+    }
     let pos = pos_from_micro(me.adv_lat, me.adv_lon);
     announce(tx, Firmware::MeshCore, card, pos, name);
     // The firmware refuses to move its clock back (it answers an error, which meshcore-rs only
