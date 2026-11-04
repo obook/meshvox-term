@@ -5,7 +5,7 @@
 //! Date: October 2026
 //! Licence: GPL-3.0
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -42,6 +42,9 @@ pub(super) fn node_lines<'a>(app: &App, node: &Node, theme: Theme) -> Vec<Line<'
         field(theme, "ID", node.prefix.clone(), text(theme)),
         field(theme, "TYPE", kind_name(node.kind).into(), text(theme)),
     ];
+    if node.favorite {
+        lines.push(field(theme, "FAV", "YES".into(), strong(theme)));
+    }
     match (app.self_pos, node.pos) {
         (Some(me), Some(p)) => {
             let b = bearing_deg(me, p);
@@ -158,9 +161,9 @@ pub(super) fn node_lines<'a>(app: &App, node: &Node, theme: Theme) -> Vec<Line<'
     lines
 }
 
-/// Everything known about the selected node.
+/// Everything known about the selected contact.
 pub(super) fn draw_card(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
-    let conv = app.current_conv();
+    let conv = app.selected_conv();
     if let (MY_RADIO, Some(radio)) = (conv.as_str(), &app.me) {
         let title = match theme {
             Theme::Normal => format!("My radio: {}", ascii_safe(&radio.name, app.ascii)),
@@ -174,38 +177,23 @@ pub(super) fn draw_card(frame: &mut Frame, app: &App, area: Rect, theme: Theme) 
         );
         return;
     }
-    let node_title = |name: &str| match theme {
-        Theme::Normal => format!("Node: {name}"),
-        Theme::Hacker => format!("NODE :: {name}"),
+    let (title, lines) = match app.nodes.iter().find(|n| n.prefix == conv) {
+        Some(node) => {
+            let name = ascii_safe(&node.name, app.ascii);
+            let title = match theme {
+                Theme::Normal => format!("Node: {name}"),
+                Theme::Hacker => format!("NODE :: {name}"),
+            };
+            (title, node_lines(app, node, theme))
+        }
+        None => (
+            "Node".to_string(),
+            vec![Line::styled("No node heard yet", faint(theme))],
+        ),
     };
-    let (title, lines) = if conv == app.public_conv() {
-        let title = if theme == Theme::Normal {
-            "Public channel"
-        } else {
-            "CHANNEL #PUBLIC"
-        };
-        let lines = vec![
-            field(theme, "NODES", app.nodes.len().to_string(), text(theme)),
-            field(theme, "MSGS", msgs_summary(app, app.public_conv()), text(theme)),
-        ];
-        (title.to_string(), lines)
-    } else if let Some(node) = app.nodes.iter().find(|n| n.prefix == conv) {
-        (
-            node_title(&ascii_safe(&node.name, app.ascii)),
-            node_lines(app, node, theme),
-        )
-    } else {
-        let lines = vec![
-            field(theme, "ID", conv.clone(), text(theme)),
-            field(theme, "TYPE", "UNKNOWN".into(), faint(theme)),
-            field(theme, "MSGS", msgs_summary(app, &conv), text(theme)),
-        ];
-        (node_title(&conv), lines)
-    };
-    frame.render_widget(
-        Paragraph::new(lines)
-            .style(text(theme))
-            .block(panel(theme, app.ascii, false, &title)),
-        area,
-    );
+    let mut block = panel(theme, app.ascii, false, &title);
+    if app.is_online(&conv) {
+        block = block.title_style(Style::new().add_modifier(Modifier::BOLD));
+    }
+    frame.render_widget(Paragraph::new(lines).style(text(theme)).block(block), area);
 }

@@ -74,7 +74,7 @@ pub(super) fn draw_radar(frame: &mut Frame, app: &App, area: Rect, theme: Theme)
         buffer.set_string(x, y, letter, faint(theme));
     }
 
-    let selected = app.current_conv();
+    let selected = app.selected_conv();
     for node in &app.nodes {
         let Some(pos) = node.pos else { continue };
         let Some((x, y)) = cell_of(app, area, pos) else {
@@ -92,6 +92,8 @@ pub(super) fn draw_radar(frame: &mut Frame, app: &App, area: Rect, theme: Theme)
             let room = usize::from(right.saturating_sub(x));
             let name: String = ascii_safe(&node.name, true).chars().take(room).collect();
             buffer.set_string(x + 1, y, format!(" {name}"), strong(theme));
+        } else if app.is_online(&node.prefix) {
+            buffer.set_string(x, y, initial, strong(theme));
         } else {
             buffer.set_string(x, y, initial, text(theme));
         }

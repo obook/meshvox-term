@@ -1,13 +1,15 @@
 //! ui/mod.rs
 //! Drawing, in two looks: Normal (rounded boxes, cyan accent, like sccast) and Hacker
 //! (phosphor green on black, radar map). This file holds the colors, the styles and the
-//! screen layout; the other files draw one panel each.
+//! layout of the four tabs (Chats, Contacts, Map, Device, as in the MeshVox app); the other
+//! files draw one panel each.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
 //! Licence: GPL-3.0
 
 mod card;
+mod chats;
 mod contacts;
 mod conversation;
 mod format;
@@ -19,20 +21,22 @@ mod radio_card;
 #[cfg(test)]
 mod tests;
 
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Paragraph, Tabs};
 use ratatui::Frame;
 
-use crate::app::App;
+use crate::app::{App, Tab};
 use card::draw_card;
+use chats::draw_chats;
 use contacts::draw_contacts;
 use conversation::draw_conversation;
 use map_panel::draw_map;
 pub use map_panel::MapState;
 pub use menu::{draw_boot, draw_menu, menu_key, Menu, BOOT};
 use panels::{draw_footer, draw_header};
+use radio_card::radio_lines;
 
 const GREEN: Color = Color::Rgb(0, 255, 65);
 const DIM: Color = Color::Rgb(0, 140, 40);
@@ -99,23 +103,99 @@ pub fn draw(frame: &mut Frame, app: &App, map: &mut MapState, theme: Theme) {
     if theme == Theme::Hacker {
         frame.render_widget(Block::new().style(text(theme)), frame.area());
     }
-    let [header, middle, conversation, footer] = Layout::vertical([
+    let [header, tabs, body, footer] = Layout::vertical([
         Constraint::Length(3),
+        Constraint::Length(1),
         Constraint::Min(0),
-        Constraint::Length(8),
         Constraint::Length(1),
     ])
     .areas(frame.area());
-    let [contacts, map_area, card] = Layout::horizontal([
-        Constraint::Length(32),
-        Constraint::Min(0),
-        Constraint::Length(32),
-    ])
-    .areas(middle);
     draw_header(frame, app, header, theme);
-    draw_contacts(frame, app, contacts, theme);
-    draw_map(frame, app, map_area, map, theme);
-    draw_card(frame, app, card, theme);
-    draw_conversation(frame, app, conversation, theme);
-    draw_footer(frame, footer, theme, app.ascii);
+    draw_tabs(frame, app, tabs, theme);
+    match app.tab {
+        Tab::Chats => {
+            let [list, conversation] =
+                Layout::horizontal([Constraint::Length(36), Constraint::Min(0)]).areas(body);
+            draw_chats(frame, app, list, theme);
+            draw_conversation(frame, app, conversation, theme);
+        }
+        Tab::Contacts => {
+            let [list, card] =
+                Layout::horizontal([Constraint::Length(36), Constraint::Min(0)]).areas(body);
+            draw_contacts(frame, app, list, theme);
+            draw_card(frame, app, card, theme);
+        }
+        Tab::Map => {
+            let [map_area, card] =
+                Layout::horizontal([Constraint::Min(0), Constraint::Length(32)]).areas(body);
+            draw_map(frame, app, map_area, map, theme);
+            draw_card(frame, app, card, theme);
+        }
+        Tab::Device => draw_device(frame, app, body, theme),
+    }
+    draw_footer(frame, app, footer, theme);
+}
+
+/// The tab bar under the banner; each tab with the key that opens it.
+fn draw_tabs(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
+    let unread: usize = app.unread.values().sum();
+    let titles = Tab::ALL.iter().enumerate().map(|(i, &tab)| {
+        let name = match (tab, theme) {
+            (Tab::Chats, _) if unread > 0 => format!("Chats ({unread})"),
+            (Tab::Chats, _) => "Chats".into(),
+            (Tab::Contacts, Theme::Normal) => "Contacts".into(),
+            (Tab::Contacts, Theme::Hacker) => "Nodes".into(),
+            (Tab::Map, Theme::Normal) => "Map".into(),
+            (Tab::Map, Theme::Hacker) => "Radar".into(),
+            (Tab::Device, _) => "Device".into(),
+        };
+        let name = match theme {
+            Theme::Normal => name,
+            Theme::Hacker => name.to_uppercase(),
+        };
+        Line::from(format!("{} {name}", i + 1))
+    });
+    let selected = Tab::ALL.iter().position(|&t| t == app.tab);
+    let highlight = match theme {
+        Theme::Normal => Style::new()
+            .fg(BLACK)
+            .bg(CYAN)
+            .add_modifier(Modifier::BOLD),
+        Theme::Hacker => Style::new()
+            .fg(BLACK)
+            .bg(GREEN)
+            .add_modifier(Modifier::BOLD),
+    };
+    let tabs = Tabs::new(titles)
+        .select(selected)
+        .style(faint(theme))
+        .highlight_style(highlight)
+        .divider(if app.ascii { "|" } else { "│" });
+    frame.render_widget(tabs, area);
+}
+
+/// The Device tab: my radio's card, or why there is none yet.
+fn draw_device(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
+    let (title, lines) = match &app.me {
+        Some(radio) => (
+            match theme {
+                Theme::Normal => format!("My radio: {}", format::ascii_safe(&radio.name, app.ascii)),
+                Theme::Hacker => format!("RADIO :: {}", format::ascii_safe(&radio.name, app.ascii)),
+            },
+            radio_lines(app, radio, theme),
+        ),
+        None => (
+            match theme {
+                Theme::Normal => "My radio".to_string(),
+                Theme::Hacker => "RADIO".to_string(),
+            },
+            vec![Line::styled("No radio connected yet", faint(theme))],
+        ),
+    };
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(text(theme))
+            .block(panel(theme, app.ascii, true, &title)),
+        area,
+    );
 }

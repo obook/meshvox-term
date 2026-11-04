@@ -20,6 +20,26 @@ ThinkNode M5 (MeshCore Companion Bluetooth v1.18.0, Meshtastic 2.7.26).
 - [x] Fixes to meshcore-rs 0.2.0 (copy in `vendor/`): one D-Bus
   connection, no more duplicated notifications after a reconnection
 
+## Interface of the MeshVox app
+
+Bring the tabs and features of the MeshVox Android app to the terminal,
+one step at a time.
+
+- [x] Four tabs (Chats, Contacts, Map, Device), keys 1 to 4; a
+  conversation list apart from the contact list
+- [x] Online nodes (heard in the last hour) in bold, as in MeshVox
+- [ ] Chats: filters (all, unread, channels, direct) and search
+- [ ] Private and hashtag channels: list, join, create, rename, share
+- [x] Contacts: filters (contacts, favorites, repeaters, all) and online
+  counts; favorites read from the radio
+- [ ] Contacts: set or clear a favorite (needs reading one contact by key
+  before writing it back), sorting; add, remove, share, reset path, export
+- [ ] Path tools: trace path and path discovery
+- [ ] Repeater: login, status and telemetry
+- [ ] Device: name, position, TX power, GPS, region, radio settings,
+  advert, with confirmation
+- [ ] Export and import of the configuration (MeshVox JSON file)
+
 ## To check on the hardware
 
 - [ ] Ping a repeater with the guest login ("33LPOR Pier Ré" failed

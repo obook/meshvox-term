@@ -77,5 +77,6 @@ pub const BOOT: Duration = Duration::from_millis(1500);
 /// Battery under this percentage is shown as an alert.
 pub const LOW_BATTERY: u8 = 20;
 
-/// A contact heard within this many seconds is marked in the list.
-pub const FRESH_SECS: i64 = 600;
+/// A node heard within this many seconds is online, as in the MeshVox app: its name is bold
+/// wherever it is written, and marked in the contact list.
+pub const ONLINE_SECS: i64 = 3600;

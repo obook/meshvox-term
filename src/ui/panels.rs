@@ -12,7 +12,7 @@ use ratatui::Frame;
 
 use super::format::{gauge, spinner, LOW_BATTERY};
 use super::{alert, faint, panel, strong, text, Theme};
-use crate::app::App;
+use crate::app::{App, Tab};
 use crate::radio::Link;
 
 /// The banner: link state, battery and node count, or the current notice.
@@ -102,51 +102,65 @@ pub(super) fn draw_header(frame: &mut Frame, app: &App, area: Rect, theme: Theme
     frame.render_widget(Paragraph::new(line).block(block), area);
 }
 
-/// The keys line at the bottom.
-pub(super) fn draw_footer(frame: &mut Frame, area: Rect, theme: Theme, ascii: bool) {
-    let spans: Vec<Span> = match theme {
-        Theme::Normal => {
-            let keys = [
-                (if ascii { "up/down" } else { "↑↓" }, "move"),
-                ("Tab", "switch"),
-                ("Enter", "send"),
-                ("+/-", "zoom"),
-                ("arrows", "pan"),
-                ("p", "ping"),
-                ("PgUp/PgDn", "scroll"),
-                ("q", "quit"),
-            ];
-            keys.iter()
-                .flat_map(|(k, what)| {
-                    [
-                        Span::styled(
-                            format!(" {k} "),
-                            Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(format!("{what}  ")),
-                    ]
-                })
-                .collect()
-        }
-        Theme::Hacker => {
-            let keys = [
-                ("TAB", "CYCLE"),
-                ("ENTER", "TRANSMIT"),
-                ("+/-", "ZOOM"),
-                ("ARROWS", "PAN"),
-                ("P", "PING"),
-                ("PGUP/PGDN", "SCROLLBACK"),
-                ("Q", "EXIT"),
-            ];
-            keys.iter()
-                .flat_map(|(k, what)| {
-                    [
-                        Span::styled(format!(" [{k}]"), strong(theme)),
-                        Span::styled(format!(" {what} "), faint(theme)),
-                    ]
-                })
-                .collect()
-        }
+/// The keys of the open tab, Normal names then Hacker names.
+fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
+    let arrows = if app.ascii { "up/down" } else { "↑↓" };
+    let sideways = if app.ascii { "left/right" } else { "←→" };
+    let mut keys = match (app.tab, app.typing) {
+        (Tab::Chats, true) => vec![
+            ("Enter", "send", "TRANSMIT"),
+            ("Esc", "leave input", "ABORT"),
+            ("PgUp/PgDn", "scroll", "SCROLLBACK"),
+        ],
+        (Tab::Chats, false) => vec![
+            (arrows, "chat", "CHANNEL"),
+            ("Enter", "write", "COMPOSE"),
+            ("PgUp/PgDn", "scroll", "SCROLLBACK"),
+        ],
+        (Tab::Contacts, _) => vec![
+            (arrows, "move", "SELECT"),
+            (sideways, "filter", "FILTER"),
+            ("Enter", "write", "COMPOSE"),
+            ("p", "ping", "PING"),
+        ],
+        (Tab::Map, _) => vec![
+            ("arrows", "pan", "PAN"),
+            ("+/-", "zoom", "ZOOM"),
+            ("[ ]", "node", "NODE"),
+            ("p", "ping", "PING"),
+        ],
+        (Tab::Device, _) => vec![],
     };
+    if !app.typing {
+        keys.extend([("1-4", "tabs", "TABS"), ("q", "quit", "EXIT")]);
+    }
+    keys
+}
+
+/// The keys line at the bottom.
+pub(super) fn draw_footer(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
+    let spans: Vec<Span> = keys(app)
+        .into_iter()
+        .flat_map(|(k, normal, hacker)| match theme {
+            Theme::Normal => [
+                Span::styled(
+                    format!(" {k} "),
+                    Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(format!("{normal}  ")),
+            ],
+            Theme::Hacker => [
+                // "[ ]" is in brackets already.
+                Span::styled(
+                    match k.starts_with('[') {
+                        true => format!(" {k}"),
+                        false => format!(" [{}]", k.to_uppercase()),
+                    },
+                    strong(theme),
+                ),
+                Span::styled(format!(" {hacker} "), faint(theme)),
+            ],
+        })
+        .collect();
     frame.render_widget(Paragraph::new(Line::from(spans)).style(text(theme)), area);
 }

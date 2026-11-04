@@ -302,3 +302,30 @@ fn device_matches_a_name_or_an_address_in_any_case() {
         addr
     ));
 }
+
+#[test]
+fn bit_0_of_the_flags_is_the_favorite() {
+    // Bit 0 is the one MeshVox sets; the other bits mean something else.
+    for (flags, favorite) in [(0, false), (1, true), (2, false), (3, true)] {
+        let c = Contact {
+            flags,
+            ..contact(1, 0, 0)
+        };
+        assert_eq!(Node::from(&c).favorite, favorite, "flags {flags}");
+    }
+}
+
+#[test]
+fn the_gps_variable_says_on_or_off() {
+    use super::convert::gps_from_vars;
+    let vars = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect::<std::collections::HashMap<_, _>>()
+    };
+    assert_eq!(gps_from_vars(&vars(&[("gps", "1")])), Some(true));
+    assert_eq!(gps_from_vars(&vars(&[("gps", "0")])), Some(false));
+    assert_eq!(gps_from_vars(&vars(&[])), None, "no GPS in the firmware");
+    assert_eq!(gps_from_vars(&vars(&[("gps", "x")])), None);
+}

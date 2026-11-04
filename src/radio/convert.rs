@@ -34,7 +34,18 @@ pub fn my_radio(
         max_tx_power: me.max_tx_power,
         // Firmware ADVERT_LOC_NONE (0): the advert carries no position.
         shares_position: me.adv_loc_policy != 0,
+        gps: None,
         preset: None,
+    }
+}
+
+/// The GPS state in the radio's custom variables: "gps" is 1 or 0, and only there when the
+/// firmware has a GPS.
+pub fn gps_from_vars(vars: &std::collections::HashMap<String, String>) -> Option<bool> {
+    match vars.get("gps")?.trim() {
+        "1" => Some(true),
+        "0" => Some(false),
+        _ => None,
     }
 }
 
@@ -102,6 +113,7 @@ impl From<&Contact> for Node {
             },
             path_len: contact.path_len,
             path: contact.out_path.clone(),
+            favorite: contact.flags & 1 != 0,
         }
     }
 }
