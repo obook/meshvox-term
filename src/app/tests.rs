@@ -947,3 +947,15 @@ fn an_empty_filter_does_not_break_the_keys() {
     }
     assert_eq!(app.selected_conv(), "");
 }
+
+#[test]
+fn chats_with_equal_stamps_keep_a_stable_order() {
+    let mut app = App::new("x", vec![]);
+    for conv in ["0102030405aa", "0102030405bb", "0102030405cc", "0102030405dd"] {
+        app.apply(FromRadio::Record(incoming_at(conv, "hi", 10)));
+    }
+    let first = chat_labels(&app);
+    for _ in 0..50 {
+        assert_eq!(chat_labels(&app), first);
+    }
+}

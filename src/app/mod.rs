@@ -226,7 +226,9 @@ impl App {
         if self.chat != public && !last.contains_key(self.chat.as_str()) {
             convs.push(&self.chat);
         }
-        convs.sort_by_key(|c| std::cmp::Reverse(last.get(c).map_or(i64::MAX, |m| m.ts)));
+        // The key breaks ties: HashMap order changes at each call, so equal stamps would swap
+        // rows at each redraw.
+        convs.sort_by_key(|c| (std::cmp::Reverse(last.get(c).map_or(i64::MAX, |m| m.ts)), *c));
         std::iter::once(public)
             .chain(convs)
             .map(|conv| Row {
