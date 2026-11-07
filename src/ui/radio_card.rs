@@ -8,7 +8,7 @@
 use ratatui::text::Line;
 
 use super::card::field;
-use super::format::{coord, khz, uptime, LOW_BATTERY};
+use super::format::{coord, hhmm, khz, uptime, LOW_BATTERY};
 use super::{alert, faint, text, Theme};
 use crate::app::App;
 use crate::radio::{Link, MyRadio};
@@ -98,6 +98,10 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         },
         text(theme),
     ));
+    if let Some((flood, ts)) = app.advert {
+        let to = if flood { "ALL" } else { "NEIGHBOURS" };
+        lines.push(field(theme, "SENT", format!("TO {to} {}", hhmm(ts)), text(theme)));
+    }
     // Whether the GPS receiver looks for satellites.
     lines.push(match radio.gps {
         Some(true) => field(theme, "GPS", "ON".into(), text(theme)),

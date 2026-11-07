@@ -596,6 +596,45 @@ fn ping_results_are_kept() {
     assert_eq!(app.pings.get("0102030405aa"), Some(&pong));
 }
 
+#[test]
+fn a_and_f_send_an_advert_from_the_device_tab() {
+    let mut app = connected();
+    app.typing = false;
+    app.tab = Tab::Device;
+    assert_eq!(
+        press(&mut app, KeyCode::Char('a')),
+        Some(ToRadio::Advert { flood: false })
+    );
+    assert_eq!(
+        press(&mut app, KeyCode::Char('f')),
+        Some(ToRadio::Advert { flood: true })
+    );
+    app.apply(FromRadio::Advert {
+        flood: true,
+        error: None,
+    });
+    assert_eq!(app.advert.map(|(flood, _)| flood), Some(true));
+    app.apply(FromRadio::Advert {
+        flood: false,
+        error: Some("timeout".into()),
+    });
+    assert_eq!(app.notice.as_deref(), Some("Advert failed: timeout"));
+    assert_eq!(app.advert.map(|(flood, _)| flood), Some(true), "last one sent");
+}
+
+#[test]
+fn advert_offline_or_on_meshtastic_is_refused() {
+    let mut app = connected();
+    app.typing = false;
+    app.tab = Tab::Device;
+    app.apply(FromRadio::Firmware(Firmware::Meshtastic));
+    assert_eq!(press(&mut app, KeyCode::Char('f')), None);
+    assert_eq!(app.notice.as_deref(), Some("Adverts are MeshCore only"));
+    app.apply(FromRadio::Link(Link::Lost("x".into())));
+    assert_eq!(press(&mut app, KeyCode::Char('a')), None);
+    assert_eq!(app.notice.as_deref(), Some("Not connected, advert not sent"));
+}
+
 fn my_radio() -> MyRadio {
     MyRadio {
         prefix: "abcdef012345".into(),

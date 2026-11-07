@@ -85,6 +85,11 @@ pub enum FromRadio {
         prefix: String,
         ping: Ping,
     },
+    /// The radio took the advert, or did not (`error`).
+    Advert {
+        flood: bool,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -100,6 +105,10 @@ pub enum ToRadio {
     Ping {
         key: String,
         prefix: String,
+    },
+    /// Advert of my radio: to the whole network (flood), or to the neighbours only (zero hop).
+    Advert {
+        flood: bool,
     },
 }
 
@@ -132,6 +141,12 @@ impl ToRadio {
                 return FromRadio::Pong {
                     prefix: prefix.clone(),
                     ping: Ping::Failed(error),
+                }
+            }
+            ToRadio::Advert { flood } => {
+                return FromRadio::Advert {
+                    flood: *flood,
+                    error: Some(error),
                 }
             }
         };

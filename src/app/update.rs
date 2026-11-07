@@ -54,6 +54,12 @@ impl App {
             FromRadio::Pong { prefix, ping } => {
                 self.pings.insert(prefix, ping);
             }
+            FromRadio::Advert { flood, error: None } => {
+                self.advert = Some((flood, chrono::Utc::now().timestamp()))
+            }
+            FromRadio::Advert {
+                error: Some(error), ..
+            } => self.notice = Some(format!("Advert failed: {error}")),
             FromRadio::SendFailed {
                 conv: failed,
                 text,

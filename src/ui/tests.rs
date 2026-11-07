@@ -383,6 +383,12 @@ fn device_tab_shows_my_radio_or_waits_for_it() {
     app.tab = Tab::Device;
     let s = normal(&app);
     assert!(s.contains("My radio: bbok") && s.contains("869.525 MHz"), "{s}");
+    assert!(s.contains("advert to all") && !s.contains("SENT"), "{s}");
+    app.apply(FromRadio::Advert {
+        flood: false,
+        error: None,
+    });
+    assert!(normal(&app).contains("SENT   TO NEIGHBOURS"));
     let mut app = App::new("x", vec![]);
     app.tab = Tab::Device;
     assert!(normal(&app).contains("No radio connected yet"));

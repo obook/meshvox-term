@@ -205,7 +205,7 @@ pub(super) fn save(history: &Path, tx: &Sender<FromRadio>, rec: Record) -> anyho
     Ok(written.map_err(HistoryWriteFailed)?)
 }
 
-/// Send a direct or public message, then save it as sent.
+/// Send a direct or public message, then save it as sent; or send an advert.
 pub(super) async fn send(
     radio: &MeshCore,
     history: &Path,
@@ -247,6 +247,14 @@ pub(super) async fn send(
             }
         }
         ToRadio::Ping { .. } => return Ok(()), // handled by ping()
+        ToRadio::Advert { flood } => {
+            radio.commands().lock().await.send_advert(*flood).await?;
+            let _ = tx.send(FromRadio::Advert {
+                flood: *flood,
+                error: None,
+            });
+            return Ok(());
+        }
     };
     save(history, tx, Record::Msg(msg))
 }

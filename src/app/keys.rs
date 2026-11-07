@@ -1,5 +1,5 @@
 //! app/keys.rs
-//! Keyboard handling: tabs, selection, map moves, scrolling, sending and pinging. key()
+//! Keyboard handling: tabs, selection, map moves, scrolling, sending, pinging and adverts. key()
 //! returns the radio command (radio::ToRadio) a key asks for, if any.
 //!
 //! Author: O. Booklage
@@ -47,6 +47,8 @@ impl App {
             (Tab::Map, KeyCode::Right) => self.move_map(|v| v.pan(1, 0)),
             (Tab::Map, KeyCode::Up) => self.move_map(|v| v.pan(0, 1)),
             (Tab::Map, KeyCode::Down) => self.move_map(|v| v.pan(0, -1)),
+            (Tab::Device, KeyCode::Char('a')) => return self.advert(false),
+            (Tab::Device, KeyCode::Char('f')) => return self.advert(true),
             _ => {}
         }
         None
@@ -187,6 +189,19 @@ impl App {
         };
         self.pings.insert(conv, Ping::Waiting);
         Some(cmd)
+    }
+
+    /// Advert of my radio, to the neighbours only or to the whole network (flood).
+    fn advert(&mut self, flood: bool) -> Option<ToRadio> {
+        if !matches!(self.link, Link::Connected(_)) {
+            self.notice = Some("Not connected, advert not sent".into());
+            return None;
+        }
+        if self.firmware != Firmware::MeshCore {
+            self.notice = Some("Adverts are MeshCore only".into());
+            return None;
+        }
+        Some(ToRadio::Advert { flood })
     }
 
     /// My own radio, by its row or by its id (an old conversation can carry it).
