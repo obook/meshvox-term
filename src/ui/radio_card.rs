@@ -77,6 +77,12 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         format!("{} dBm{max}", radio.tx_power),
         text(theme),
     ));
+    // Shown as MeshVox does: no line when the firmware does not know regions.
+    match &radio.region {
+        Some(Some(name)) => lines.push(field(theme, "REGION", name.clone(), text(theme))),
+        Some(None) => lines.push(field(theme, "REGION", "NONE".into(), faint(theme))),
+        None => {}
+    }
     lines.push(match app.self_pos {
         Some(p) => field(theme, "POS", coord(p.lat, p.lon), text(theme)),
         None => field(theme, "POS", "UNKNOWN".into(), faint(theme)),

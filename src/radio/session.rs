@@ -16,7 +16,10 @@ use meshcore_rs::parsing::hex_encode;
 use meshcore_rs::MeshCore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use super::convert::{channel_msg, contact_msg, gps_from_vars, lipo_percent, my_radio};
+use super::convert::{
+    channel_msg, contact_msg, gps_from_vars, lipo_percent, my_radio, region_from_frame,
+    CMD_GET_DEFAULT_REGION,
+};
 use super::link::now;
 use super::ping::ping;
 use super::{Battery, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, ToRadio};
@@ -44,6 +47,25 @@ pub(super) async fn session(
     match radio.commands().lock().await.get_custom_vars().await {
         Ok(vars) => card.gps = gps_from_vars(&vars),
         Err(e) => tracing::info!("custom vars: {e}"),
+    }
+    // meshcore-rs passes the unknown answer on as raw bytes; an older firmware answers an error.
+    let region = radio
+        .commands()
+        .lock()
+        .await
+        .send_multi(
+            &[CMD_GET_DEFAULT_REGION],
+            &[EventType::Unknown, EventType::Error],
+            meshcore_rs::commands::DEFAULT_TIMEOUT,
+        )
+        .await;
+    match region {
+        Ok(event) => {
+            if let EventPayload::Bytes(frame) = event.payload {
+                card.region = region_from_frame(&frame);
+            }
+        }
+        Err(e) => tracing::info!("default region: {e}"),
     }
     let pos = pos_from_micro(me.adv_lat, me.adv_lon);
     announce(tx, Firmware::MeshCore, card, pos, name);

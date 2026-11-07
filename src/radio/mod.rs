@@ -61,6 +61,9 @@ pub struct MyRadio {
     pub gps: Option<bool>,
     /// Meshtastic region and modem preset ("EU_868 LONG_FAST"), when it uses one.
     pub preset: Option<String>,
+    /// MeshCore default region (flood scope). None: not read (Meshtastic, or a firmware older
+    /// than the region commands); Some(None): no region set.
+    pub region: Option<Option<String>>,
 }
 
 pub enum FromRadio {
