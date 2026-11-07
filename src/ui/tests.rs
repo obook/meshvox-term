@@ -383,6 +383,12 @@ fn device_tab_shows_my_radio_or_waits_for_it() {
     app.tab = Tab::Device;
     let s = normal(&app);
     assert!(s.contains("My radio: bbok") && s.contains("869.525 MHz"), "{s}");
+    assert!(s.contains("advert to all") && !s.contains("SENT"), "{s}");
+    app.apply(FromRadio::Advert {
+        flood: false,
+        error: None,
+    });
+    assert!(normal(&app).contains("SENT   TO NEIGHBOURS"));
     let mut app = App::new("x", vec![]);
     app.tab = Tab::Device;
     assert!(normal(&app).contains("No radio connected yet"));
@@ -530,6 +536,7 @@ fn radio_app() -> App {
         shares_position: true,
         gps: Some(false),
         preset: None,
+        region: Some(Some("fr-33".into())),
     }));
     app.apply(FromRadio::Nodes(nodes(11)));
     app.selected = 0;
@@ -551,6 +558,7 @@ fn card_for_my_radio() {
         "869.525 MHz",
         "BW 250 kHz SF 11 CR 5",
         "22 dBm (max 22)",
+        "REGION fr-33",
         "ADVERT POSITION SHARED",
         "GPS    OFF",
         "NODES  11",

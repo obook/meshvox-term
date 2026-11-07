@@ -86,6 +86,8 @@ pub struct App {
     pub acked: HashSet<String>,
     /// Last ping of each node, by prefix.
     pub pings: HashMap<String, Ping>,
+    /// The last advert my radio took this session: to the whole network or not, and when.
+    pub advert: Option<(bool, i64)>,
     pub unread: HashMap<String, usize>,
     pub tab: Tab,
     /// Key of the conversation open in the Chats tab.
@@ -133,6 +135,7 @@ impl App {
             msgs: vec![],
             acked: HashSet::new(),
             pings: HashMap::new(),
+            advert: None,
             unread: HashMap::new(),
             tab: Tab::Chats,
             chat: PUBLIC.into(),
