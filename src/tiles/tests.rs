@@ -321,6 +321,9 @@ fn marks_are_drawn_at_their_position() {
         Look::Night,
     );
     assert_eq!(*img.get_pixel(256, 256), ME);
+    assert_eq!(*img.get_pixel(256 + 6, 256), ME_RING);
+    let halo = *img.get_pixel(256 + 11, 256);
+    assert!(halo != BACKGROUND && halo != ME, "a pale halo over the tile: {halo:?}");
     let img = compose(
         &world_z1(),
         512,

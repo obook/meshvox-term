@@ -24,8 +24,6 @@ pub enum Look {
 // Plain palette.
 /// Where a tile is missing (Normal look).
 pub(super) const PLAIN_BACKGROUND: Rgba<u8> = Rgba([40, 40, 40, 255]);
-/// My radio's triangle (Normal look).
-pub(super) const PLAIN_ME: Rgba<u8> = Rgba([255, 140, 0, 255]);
 
 // Hacker palette.
 /// Where a tile is missing (Hacker look).
@@ -34,8 +32,10 @@ pub const BACKGROUND: Rgba<u8> = Rgba([0, 8, 2, 255]);
 pub const NODE: Rgba<u8> = Rgba([170, 255, 170, 255]);
 /// The selected node's pin (Hacker look).
 pub const SELECTED: Rgba<u8> = Rgba([255, 255, 255, 255]);
-/// My radio's triangle (Hacker look).
-pub const ME: Rgba<u8> = Rgba([255, 50, 50, 255]);
+/// My radio's dot, in both looks: blue, unlike the red pin of the selected node.
+pub const ME: Rgba<u8> = Rgba([30, 136, 229, 255]);
+/// The ring around my radio's dot.
+pub const ME_RING: Rgba<u8> = Rgba([255, 255, 255, 255]);
 /// Range rings around my radio.
 pub const RING: Rgba<u8> = Rgba([150, 255, 180, 255]);
 /// The dotted grid.
@@ -143,8 +143,7 @@ pub fn compose(
             match (mark, look) {
                 (Mark::Node(_), Look::Night) => cross(&mut img, x, y, NODE),
                 (Mark::Node(icon), Look::Plain) => draw_icon(&mut img, x, y, icon),
-                (Mark::Me, Look::Night) => triangle(&mut img, x, y, ME),
-                (Mark::Me, Look::Plain) => triangle(&mut img, x, y, PLAIN_ME),
+                (Mark::Me, _) => here(&mut img, x, y),
                 (Mark::Selected(_), Look::Night) => {
                     pin(&mut img, x, y, SELECTED);
                     cross(&mut img, x, y - PIN_HEAD, PIN_CROSS);
@@ -240,12 +239,26 @@ pub(super) fn cross(img: &mut RgbaImage, x: i64, y: i64, fill: Rgba<u8>) {
     }
 }
 
-/// My radio: a red triangle pointing up, outlined.
-pub(super) fn triangle(img: &mut RgbaImage, x: i64, y: i64, fill: Rgba<u8>) {
-    for (color, grow) in [(OUTLINE, 2), (fill, 0)] {
-        for dy in -7 - grow..=5 + grow {
-            let half = (dy + 7 + grow) * (6 + grow) / (12 + 2 * grow);
-            (-half..=half).for_each(|dx| put(img, x + dx, y + dy, color));
+/// My radio, the "you are here" way: a blue dot in a white ring, outlined, in a pale halo.
+pub(super) fn here(img: &mut RgbaImage, x: i64, y: i64) {
+    // The halo lets the tile show through: 70/255 of the blue over it.
+    let mix = |a: u8, b: u8| ((u32::from(a) * 185 + u32::from(b) * 70) / 255) as u8;
+    disk(img, x, y, 12, |p| Rgba([mix(p[0], ME[0]), mix(p[1], ME[1]), mix(p[2], ME[2]), 255]));
+    disk(img, x, y, 8, |_| OUTLINE);
+    disk(img, x, y, 7, |_| ME_RING);
+    disk(img, x, y, 5, |_| ME);
+}
+
+/// Repaint each pixel of a disk with `paint`, ignoring what falls outside the image.
+fn disk(img: &mut RgbaImage, x: i64, y: i64, r: i64, paint: impl Fn(Rgba<u8>) -> Rgba<u8>) {
+    let (w, h) = (i64::from(img.width()), i64::from(img.height()));
+    for dy in -r..=r {
+        for dx in -r..=r {
+            let (px, py) = (x + dx, y + dy);
+            if dx * dx + dy * dy <= r * r + r && (0..w).contains(&px) && (0..h).contains(&py) {
+                let p = img.get_pixel_mut(px as u32, py as u32);
+                *p = paint(*p);
+            }
         }
     }
 }
