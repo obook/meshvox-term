@@ -885,3 +885,27 @@ fn the_card_marks_a_favorite() {
     app.tab = Tab::Contacts;
     assert!(screen(&app).contains("FAV    YES"));
 }
+
+#[test]
+fn map_drops_the_erase_before_an_iterm2_image() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    let mut picker = ratatui_image::picker::Picker::halfblocks();
+    picker.set_protocol_type(ratatui_image::picker::ProtocolType::Iterm2);
+    let img = image::RgbaImage::from_pixel(80, 80, image::Rgba([1, 2, 3, 255]));
+    let mut proto = picker.new_resize_protocol(image::DynamicImage::ImageRgba8(img));
+    let area = Rect::new(0, 0, 8, 4);
+    let mut buf = Buffer::empty(area);
+    ratatui::widgets::StatefulWidget::render(
+        ratatui_image::StatefulImage::default(),
+        area,
+        &mut buf,
+        &mut proto,
+    );
+    let before = buf[(0, 0)].symbol().to_string();
+    assert!(before.starts_with("\x1b[") && before.contains("X"), "the erase is there: {before:.40?}");
+    map_panel::drop_erase(&mut buf, area);
+    let after = buf[(0, 0)].symbol();
+    assert!(after.starts_with("\x1b]1337;File=inline=1"), "{after:.40?}");
+    assert!(before.ends_with(after), "the image itself is kept");
+}

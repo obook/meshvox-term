@@ -137,5 +137,22 @@ pub(super) fn draw_map(frame: &mut Frame, app: &App, area: Rect, map: &mut MapSt
     }
     if let Some(image) = &mut map.image {
         frame.render_stateful_widget(StatefulImage::default(), inner, image);
+        drop_erase(frame.buffer_mut(), inner);
+    }
+}
+
+/// ratatui-image erases the whole area before each iTerm2 image, and Konsole shows its gray
+/// background until the new PNG is decoded: a gray flash at each map move. The map image is
+/// opaque and fills the area, so the erase goes; the image escape stays as it is.
+/// shortcut: relies on ratatui-image 11.1 putting the erase before "ESC ]1337" in the first
+/// cell (outside tmux); map_drops_the_erase_before_an_iterm2_image catches a change.
+pub(super) fn drop_erase(buf: &mut ratatui::buffer::Buffer, area: Rect) {
+    let Some(cell) = buf.cell_mut((area.x, area.y)) else {
+        return;
+    };
+    let sym = cell.symbol();
+    if let (true, Some(start)) = (sym.starts_with("\x1b["), sym.find("\x1b]1337;")) {
+        let image = sym[start..].to_string();
+        cell.set_symbol(&image);
     }
 }
