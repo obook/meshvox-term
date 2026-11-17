@@ -1,5 +1,6 @@
 //! tiles/font.rs
-//! A 5 x 7 bitmap font of capitals and digits, enough to draw a node's initials.
+//! A 5 x 7 bitmap font of capitals, digits and a few signs: a node's initials, and the
+//! labels of the Hacker map.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
@@ -7,13 +8,15 @@
 
 use image::RgbaImage;
 
+use image::Rgba;
+
 use super::compose::put;
 use super::icons::GLYPH;
 
-/// 5x7 capitals and digits for the initials.
+/// 5x7 capitals, digits and the signs node names often have.
 pub(super) fn glyph(c: char) -> Option<[u8; 7]> {
     #[rustfmt::skip]
-    const FONT: [(char, [u8; 7]); 36] = [
+    const FONT: [(char, [u8; 7]); 39] = [
         ('A', [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001]),
         ('B', [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110]),
         ('C', [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110]),
@@ -50,22 +53,33 @@ pub(super) fn glyph(c: char) -> Option<[u8; 7]> {
         ('7', [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000]),
         ('8', [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110]),
         ('9', [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100]),
+        ('_', [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111]),
+        ('-', [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000]),
+        ('.', [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100]),
     ];
     FONT.iter().find(|(k, _)| *k == c).map(|(_, rows)| *rows)
 }
 
-/// Draw `text` centered on (cx, cy), each font pixel 2 x 2.
+/// A character's advance and a line's height, in pixels (font pixels are 2 x 2).
+pub(super) const CHAR_PX: i64 = 12;
+pub(super) const TEXT_PX: i64 = 14;
+
+/// Draw `text` in white, centered on (cx, cy).
 pub(super) fn draw_text(img: &mut RgbaImage, cx: i64, cy: i64, text: &str) {
     let n = text.chars().count() as i64;
-    let left = cx - (n * 10 + (n - 1).max(0) * 2) / 2;
+    draw_text_at(img, cx - (n * CHAR_PX - 2) / 2, cy - 7, text, GLYPH);
+}
+
+/// Draw `text` from its top left corner; a character the font lacks leaves a blank.
+pub(super) fn draw_text_at(img: &mut RgbaImage, left: i64, top: i64, text: &str, color: Rgba<u8>) {
     for (i, c) in text.chars().enumerate() {
         let Some(rows) = glyph(c) else { continue };
-        let x0 = left + i as i64 * 12;
+        let x0 = left + i as i64 * CHAR_PX;
         for (row, bits) in rows.iter().enumerate() {
             for col in 0..5 {
                 if bits & (0b10000 >> col) != 0 {
                     for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                        put(img, x0 + col * 2 + dx, cy - 7 + row as i64 * 2 + dy, GLYPH);
+                        put(img, x0 + col * 2 + dx, top + row as i64 * 2 + dy, color);
                     }
                 }
             }

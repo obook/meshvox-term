@@ -635,6 +635,52 @@ fn advert_offline_or_on_meshtastic_is_refused() {
     assert_eq!(app.notice.as_deref(), Some("Not connected, advert not sent"));
 }
 
+#[test]
+fn p_pairs_from_the_device_tab_and_takes_the_pin() {
+    let mut app = App::new("x", vec![]);
+    app.tab = Tab::Device;
+    assert_eq!(press(&mut app, KeyCode::Char('p')), Some(ToRadio::Pair));
+    assert_eq!(press(&mut app, KeyCode::Char('p')), None, "already running");
+    // BlueZ asks for the PIN while another tab is open: the Device tab takes the keys.
+    app.tab = Tab::Chats;
+    app.apply(FromRadio::Pairing(Pairing::Pin("MeshCore-bbok".into())));
+    assert_eq!(app.tab, Tab::Device);
+    for c in "0123456789".chars() {
+        assert_eq!(press(&mut app, KeyCode::Char(c)), None);
+    }
+    assert_eq!(app.pin, "012345", "6 digits at most");
+    press(&mut app, KeyCode::Char('q'));
+    press(&mut app, KeyCode::Backspace);
+    assert!(!app.quit && app.pin == "01234");
+    assert_eq!(press(&mut app, KeyCode::Enter), Some(ToRadio::Pin(Some(1234))));
+    assert_eq!(app.pairing, Some(Pairing::Running));
+    app.apply(FromRadio::Pairing(Pairing::Failed("Authentication Rejected".into())));
+    assert_eq!(app.pairing, None);
+    assert_eq!(app.notice.as_deref(), Some("Pairing failed: Authentication Rejected"));
+}
+
+#[test]
+fn esc_cancels_the_pin() {
+    let mut app = App::new("x", vec![]);
+    app.apply(FromRadio::Pairing(Pairing::Pin("Meshtastic_d940".into())));
+    press(&mut app, KeyCode::Char('4'));
+    assert_eq!(press(&mut app, KeyCode::Enter), Some(ToRadio::Pin(Some(4))));
+    app.apply(FromRadio::Pairing(Pairing::Pin("Meshtastic_d940".into())));
+    assert_eq!(app.pin, "", "a new request starts empty");
+    assert_eq!(press(&mut app, KeyCode::Enter), None, "nothing typed");
+    assert_eq!(press(&mut app, KeyCode::Esc), Some(ToRadio::Pin(None)));
+}
+
+#[test]
+fn s_turns_the_radar_sweep_on_and_off() {
+    let mut app = App::new("x", vec![]);
+    app.tab = Tab::Map;
+    press(&mut app, KeyCode::Char('s'));
+    assert!(app.sweep);
+    press(&mut app, KeyCode::Char('s'));
+    assert!(!app.sweep);
+}
+
 fn my_radio() -> MyRadio {
     MyRadio {
         prefix: "abcdef012345".into(),

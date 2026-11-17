@@ -20,8 +20,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use image::RgbaImage;
 
-use crate::config::{TILES_IN_MEMORY, TILE_MAX_AGE, TILE_RETRY, TILE_URL, TILE_USER_AGENT};
-pub use compose::{compose, ring_px, Look, Mark};
+use crate::config::{IGN_URL, TILES_IN_MEMORY, TILE_MAX_AGE, TILE_RETRY, TILE_URL, TILE_USER_AGENT};
+pub use compose::{compose, ring_px, sweep, Look, Mark, SWEEP_STEPS};
 pub use icons::{initials, Icon};
 
 type Key = (u8, u32, u32);
@@ -33,7 +33,47 @@ enum Asked {
     Failed(Instant),
 }
 
+/// Where the map tiles come from.
+#[derive(Clone, Copy, Debug, PartialEq, clap::ValueEnum)]
+pub enum Source {
+    /// Plan IGN, with OpenStreetMap where IGN has no tile (outside France).
+    Ign,
+    Osm,
+}
+
+impl Source {
+    /// The cache of each source: an IGN cache also holds the OSM tiles it fell back to.
+    pub fn dir(self) -> PathBuf {
+        match self {
+            Source::Osm => Tiles::default_dir(),
+            Source::Ign => Tiles::default_dir().with_file_name("tiles-ign"),
+        }
+    }
+
+    /// The addresses of a tile, tried in turn while the previous one answers 404.
+    pub fn urls(self, (z, x, y): Key) -> Vec<String> {
+        let osm = format!("{TILE_URL}/{z}/{x}/{y}.png");
+        match self {
+            Source::Osm => vec![osm],
+            Source::Ign => vec![
+                format!("{IGN_URL}&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"),
+                osm,
+            ],
+        }
+    }
+
+    /// The map's credit line.
+    pub fn credit(self) -> &'static str {
+        match self {
+            Source::Osm => " (c) OpenStreetMap contributors ",
+            // Short: the panel can be narrow, and both credits must show.
+            Source::Ign => " (c) IGN (c) OSM ",
+        }
+    }
+}
+
 pub struct Tiles {
+    pub source: Source,
     dir: PathBuf,
     loaded: HashMap<Key, RgbaImage>,
     /// Tiles asked for and not on disk yet.
@@ -44,12 +84,13 @@ pub struct Tiles {
 }
 
 impl Tiles {
-    /// Tiles cached in `dir`, downloading the missing ones in a background thread.
-    pub fn new(dir: PathBuf) -> Tiles {
+    /// Tiles of `source` cached in `dir`, downloading the missing ones in a background thread.
+    pub fn new(source: Source, dir: PathBuf) -> Tiles {
         let mut tiles = Tiles::offline(dir.clone());
+        tiles.source = source;
         let (tx, rx) = mpsc::channel();
         let done = tiles.done_tx.clone();
-        std::thread::spawn(move || download(&dir, &rx, &done));
+        std::thread::spawn(move || download(source, &dir, &rx, &done));
         tiles.requests = Some(tx);
         tiles
     }
@@ -58,6 +99,7 @@ impl Tiles {
     pub fn offline(dir: PathBuf) -> Tiles {
         let (done_tx, done) = mpsc::channel();
         Tiles {
+            source: Source::Osm,
             dir,
             loaded: HashMap::new(),
             asked: HashMap::new(),
@@ -136,8 +178,9 @@ impl Tiles {
     }
 }
 
-/// One download at a time; each tile is written whole (temp file, then rename).
-fn download(dir: &Path, requests: &Receiver<Key>, done: &Sender<(Key, bool)>) {
+/// One download at a time; each tile is written whole (temp file, then rename). A source
+/// with no tile there (404) passes to the next one.
+fn download(source: Source, dir: &Path, requests: &Receiver<Key>, done: &Sender<(Key, bool)>) {
     // A stalled connection must not hold the queue.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(20)))
@@ -146,12 +189,15 @@ fn download(dir: &Path, requests: &Receiver<Key>, done: &Sender<(Key, bool)>) {
     for (z, x, y) in requests {
         let path = dir.join(format!("{z}/{x}/{y}.png"));
         let result = (|| -> anyhow::Result<()> {
-            let bytes = agent
-                .get(format!("{TILE_URL}/{z}/{x}/{y}.png"))
-                .header("User-Agent", TILE_USER_AGENT)
-                .call()?
-                .into_body()
-                .read_to_vec()?;
+            let mut urls = source.urls((z, x, y)).into_iter().peekable();
+            let response = loop {
+                let url = urls.next().ok_or_else(|| anyhow::anyhow!("no source"))?;
+                match agent.get(&url).header("User-Agent", TILE_USER_AGENT).call() {
+                    Err(ureq::Error::StatusCode(404)) if urls.peek().is_some() => continue,
+                    answer => break answer?,
+                }
+            };
+            let bytes = response.into_body().read_to_vec()?;
             std::fs::create_dir_all(path.parent().unwrap_or(dir))?;
             let tmp = path.with_extension("tmp");
             std::fs::write(&tmp, bytes)?;

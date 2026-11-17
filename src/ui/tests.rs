@@ -10,7 +10,7 @@ use super::menu::*;
 use super::*;
 use crate::app::{Filter, Tab};
 use crate::history::{Msg, Record};
-use crate::radio::{Battery, Firmware, FromRadio, Link, MyRadio, Node, NodeKind};
+use crate::radio::{Battery, Firmware, FromRadio, Link, MyRadio, Node, NodeKind, Pairing};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn render(draw_fn: impl FnOnce(&mut Frame)) -> String {
@@ -320,6 +320,13 @@ fn card_shows_a_repeater() {
 }
 
 #[test]
+fn the_sweep_key_shows_in_the_hacker_look_only() {
+    let app = relay_app();
+    assert!(screen(&app).contains("[S] SWEEP"));
+    assert!(!normal(&app).contains(" s "), "{}", normal(&app));
+}
+
+#[test]
 fn card_shows_the_ping_result() {
     let mut app = relay_app();
     let pong = crate::app::Ping::Pong {
@@ -392,6 +399,14 @@ fn device_tab_shows_my_radio_or_waits_for_it() {
     let mut app = App::new("x", vec![]);
     app.tab = Tab::Device;
     assert!(normal(&app).contains("No radio connected yet"));
+    // The pairing shows without a radio too.
+    app.apply(FromRadio::Pairing(Pairing::Pin("MeshCore-bbok".into())));
+    app.pin = "123".into();
+    let s = normal(&app);
+    assert!(s.contains("PIN    Type the PIN shown on the screen of MeshCore-bbok"), "{s}");
+    assert!(s.contains("       > 123_") && s.contains("Esc: cancel"), "{s}");
+    app.apply(FromRadio::Pairing(Pairing::Paired("MeshCore-bbok".into(), 0)));
+    assert!(normal(&app).contains("PAIR   PAIRED MeshCore-bbok"));
 }
 
 #[test]
@@ -417,7 +432,9 @@ fn card_helpers() {
 #[test]
 fn normal_banner_is_plain_english() {
     let mut app = App::new("MeshCore-bbok", vec![]);
-    assert!(normal(&app).contains("Searching for MeshCore-bbok... (is a phone connected to it?)"));
+    let s = normal(&app);
+    let spins = ['|', '/', '-', '\\'].iter().any(|c| s.contains(&format!("Searching for MeshCore-bbok {c} (is a phone")));
+    assert!(spins, "a turning bar while searching: {s}");
     app.apply(FromRadio::Link(Link::Connected("MeshCore-bbok".into())));
     app.apply(FromRadio::Battery(Battery {
         pct: 87,
@@ -876,4 +893,28 @@ fn the_card_marks_a_favorite() {
     app.apply(FromRadio::Nodes(ns));
     app.tab = Tab::Contacts;
     assert!(screen(&app).contains("FAV    YES"));
+}
+
+#[test]
+fn map_drops_the_erase_before_an_iterm2_image() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    let mut picker = ratatui_image::picker::Picker::halfblocks();
+    picker.set_protocol_type(ratatui_image::picker::ProtocolType::Iterm2);
+    let img = image::RgbaImage::from_pixel(80, 80, image::Rgba([1, 2, 3, 255]));
+    let mut proto = picker.new_resize_protocol(image::DynamicImage::ImageRgba8(img));
+    let area = Rect::new(0, 0, 8, 4);
+    let mut buf = Buffer::empty(area);
+    ratatui::widgets::StatefulWidget::render(
+        ratatui_image::StatefulImage::default(),
+        area,
+        &mut buf,
+        &mut proto,
+    );
+    let before = buf[(0, 0)].symbol().to_string();
+    assert!(before.starts_with("\x1b[") && before.contains("X"), "the erase is there: {before:.40?}");
+    map_panel::drop_erase(&mut buf, area);
+    let after = buf[(0, 0)].symbol();
+    assert!(after.starts_with("\x1b]1337;File=inline=1"), "{after:.40?}");
+    assert!(before.ends_with(after), "the image itself is kept");
 }

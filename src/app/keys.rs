@@ -1,5 +1,6 @@
 //! app/keys.rs
-//! Keyboard handling: tabs, selection, map moves, scrolling, sending, pinging and adverts. key()
+//! Keyboard handling: tabs, selection, map moves, scrolling, sending, pinging, adverts and
+//! pairing. key()
 //! returns the radio command (radio::ToRadio) a key asks for, if any.
 //!
 //! Author: O. Booklage
@@ -11,7 +12,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::{kind_label, App, Filter, Ping, Tab, MY_RADIO};
 use crate::config::{MAX_TEXT_BYTES, SCROLL_STEP};
 use crate::map::MapView;
-use crate::radio::{Firmware, Link, NodeKind, ToRadio};
+use crate::radio::{Firmware, Link, NodeKind, Pairing, ToRadio};
 
 impl App {
     /// Handle one key press; returns the radio command it asks for, if any.
@@ -20,6 +21,9 @@ impl App {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             self.quit |= key.code == KeyCode::Char('c');
             return None;
+        }
+        if let Some(Pairing::Pin(_)) = self.pairing {
+            return self.pin_key(key.code);
         }
         if self.typing {
             return self.type_key(key.code);
@@ -47,8 +51,10 @@ impl App {
             (Tab::Map, KeyCode::Right) => self.move_map(|v| v.pan(1, 0)),
             (Tab::Map, KeyCode::Up) => self.move_map(|v| v.pan(0, 1)),
             (Tab::Map, KeyCode::Down) => self.move_map(|v| v.pan(0, -1)),
+            (Tab::Map, KeyCode::Char('s')) => self.sweep = !self.sweep,
             (Tab::Device, KeyCode::Char('a')) => return self.advert(false),
             (Tab::Device, KeyCode::Char('f')) => return self.advert(true),
+            (Tab::Device, KeyCode::Char('p')) => return self.pair(),
             _ => {}
         }
         None
@@ -70,6 +76,37 @@ impl App {
             _ => {}
         }
         None
+    }
+
+    /// A key while the pairing waits for the PIN the radio shows (6 digits at most).
+    fn pin_key(&mut self, code: KeyCode) -> Option<ToRadio> {
+        match code {
+            KeyCode::Char(c @ '0'..='9') if self.pin.len() < 6 => self.pin.push(c),
+            KeyCode::Backspace => {
+                self.pin.pop();
+            }
+            KeyCode::Enter if !self.pin.is_empty() => {
+                self.pairing = Some(Pairing::Running);
+                return Some(ToRadio::Pin(std::mem::take(&mut self.pin).parse().ok()));
+            }
+            KeyCode::Esc => {
+                self.pairing = Some(Pairing::Running);
+                self.pin.clear();
+                return Some(ToRadio::Pin(None));
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Pair the radio again: its old bond is removed, then BlueZ asks for its PIN.
+    fn pair(&mut self) -> Option<ToRadio> {
+        if matches!(self.pairing, Some(Pairing::Running)) {
+            self.notice = Some("Pairing already running".into());
+            return None;
+        }
+        self.pairing = Some(Pairing::Running);
+        Some(ToRadio::Pair)
     }
 
     fn open_tab(&mut self, tab: Tab) {

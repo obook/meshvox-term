@@ -13,7 +13,7 @@ use ratatui::Frame;
 use super::format::{gauge, spinner, LOW_BATTERY};
 use super::{alert, faint, panel, strong, text, Theme};
 use crate::app::{App, Tab};
-use crate::radio::{Firmware, Link};
+use crate::radio::{Firmware, Link, Pairing};
 
 /// The banner: link state, battery and node count, or the current notice.
 pub(super) fn draw_header(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
@@ -43,7 +43,7 @@ pub(super) fn draw_header(frame: &mut Frame, app: &App, area: Rect, theme: Theme
             )
         }
         (Theme::Normal, None, Link::Searching(name)) => Span::styled(
-            format!("Searching for {name}... (is a phone connected to it?)"),
+            format!("Searching for {name} {} (is a phone connected to it?)", spinner()),
             Style::new().fg(Color::Yellow),
         ),
         (Theme::Normal, None, Link::Lost(reason)) => Span::styled(
@@ -128,14 +128,21 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             ("+/-", "zoom", "ZOOM"),
             ("[ ]", "node", "NODE"),
             ("p", "ping", "PING"),
+            ("s", "", "SWEEP"), // Hacker look only
+        ],
+        (Tab::Device, _) if matches!(app.pairing, Some(Pairing::Pin(_))) => vec![
+            ("0-9", "PIN", "PIN"),
+            ("Enter", "pair", "BOND"),
+            ("Esc", "cancel", "ABORT"),
         ],
         (Tab::Device, _) if app.firmware == Firmware::MeshCore => vec![
             ("a", "advert to neighbours", "ADVERT ZERO-HOP"),
             ("f", "advert to all", "ADVERT FLOOD"),
+            ("p", "pair", "PAIR"),
         ],
-        (Tab::Device, _) => vec![],
+        (Tab::Device, _) => vec![("p", "pair", "PAIR")],
     };
-    if !app.typing {
+    if !app.typing && !matches!(app.pairing, Some(Pairing::Pin(_))) {
         keys.extend([("1-4", "tabs", "TABS"), ("q", "quit", "EXIT")]);
     }
     keys
@@ -145,6 +152,7 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
 pub(super) fn draw_footer(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
     let spans: Vec<Span> = keys(app)
         .into_iter()
+        .filter(|(_, normal, _)| theme == Theme::Hacker || !normal.is_empty())
         .flat_map(|(k, normal, hacker)| match theme {
             Theme::Normal => [
                 Span::styled(

@@ -22,7 +22,9 @@ use super::convert::{
 };
 use super::link::now;
 use super::ping::ping;
-use super::{Battery, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, ToRadio};
+use super::{
+    Battery, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, PairAsked, ToRadio,
+};
 use crate::config::{CHECK_EVERY, CONTACTS_TIMEOUT};
 use crate::geo::{pos_from_micro, Pos};
 use crate::history::{self, Msg, Record, PUBLIC};
@@ -105,6 +107,9 @@ pub(super) async fn session(
             }
             cmd = cmds.recv() => {
                 let Some(cmd) = cmd else { return Ok(false) };
+                if cmd == ToRadio::Pair {
+                    return Err(PairAsked.into());
+                }
                 if let ToRadio::Ping { key, prefix } = &cmd {
                     ping(radio, key, prefix, tx);
                     continue;
@@ -246,7 +251,8 @@ pub(super) async fn send(
                 ack: None,
             }
         }
-        ToRadio::Ping { .. } => return Ok(()), // handled by ping()
+        // Ping: handled by ping(); Pair: ends the session; Pin: only while pairing.
+        ToRadio::Ping { .. } | ToRadio::Pair | ToRadio::Pin(_) => return Ok(()),
         ToRadio::Advert { flood } => {
             radio.commands().lock().await.send_advert(*flood).await?;
             let _ = tx.send(FromRadio::Advert {

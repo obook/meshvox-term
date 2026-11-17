@@ -55,6 +55,10 @@ pub const FRESHNESS_DAYS: [u32; 3] = [5, 10, 20];
 
 /// OSM usage policy: identify the app, cache tiles, at most two downloads at once (we do one).
 pub const TILE_URL: &str = "https://tile.openstreetmap.org";
+/// The IGN Geoplateforme (open data, no key): Plan IGN in Web Mercator, the same z/x/y grid
+/// as OSM. It answers 404 where it has no tile, outside France.
+pub const IGN_URL: &str = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0\
+&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/png";
 /// Names the app to the tile server, as the OSM policy requires.
 pub const TILE_USER_AGENT: &str = concat!(
     "meshvox-term/",

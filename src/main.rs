@@ -43,6 +43,9 @@ struct Cli {
     /// How the map image is shown; "auto" asks the terminal (iTerm2 images in Konsole).
     #[arg(long, value_enum, default_value = "auto")]
     image: ImageMode,
+    /// Map tiles: Plan IGN (OpenStreetMap outside France) or OpenStreetMap.
+    #[arg(long, value_enum, default_value = "ign")]
+    tiles: tiles::Source,
     /// Linux console look: ASCII symbols and a radar of letters instead of the map image
     /// (automatic when TERM=linux).
     #[arg(long)]
@@ -154,9 +157,9 @@ fn main() -> anyhow::Result<()> {
     );
     // The radar of the Linux console needs no tiles: nothing is downloaded there.
     let tiles = if app.ascii {
-        tiles::Tiles::offline(tiles::Tiles::default_dir())
+        tiles::Tiles::offline(cli.tiles.dir())
     } else {
-        tiles::Tiles::new(tiles::Tiles::default_dir())
+        tiles::Tiles::new(cli.tiles, cli.tiles.dir())
     };
     let mut map = ui::MapState::new(picker, tiles);
     let result = tui::run_tui(&mut terminal, &mut app, &mut map, &rx, &cmds);
