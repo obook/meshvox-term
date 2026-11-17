@@ -31,9 +31,9 @@ pub(super) const PLAIN_BACKGROUND: Rgba<u8> = Rgba([40, 40, 40, 255]);
 /// Where a tile is missing (Hacker look).
 pub const BACKGROUND: Rgba<u8> = Rgba([0, 8, 2, 255]);
 /// A node heard in the last hour (Hacker look).
-pub const TARGET_HOUR: Rgba<u8> = Rgba([120, 255, 140, 255]);
+pub const TARGET_HOUR: Rgba<u8> = Rgba([0, 255, 70, 255]);
 /// A node heard in the last day (Hacker look).
-pub const TARGET_DAY: Rgba<u8> = Rgba([90, 200, 105, 255]);
+pub const TARGET_DAY: Rgba<u8> = Rgba([0, 205, 60, 255]);
 /// A node heard longer ago, or never (Hacker look).
 pub const TARGET_OLD: Rgba<u8> = Rgba([95, 140, 100, 255]);
 /// The selected node, white as an owned data block on an air traffic control screen.
@@ -298,7 +298,7 @@ fn targets(img: &mut RgbaImage, view: &MapView, marks: &[(Pos, Mark)]) {
         .collect();
     nodes.sort_by_key(|(_, _, icon, selected)| (!selected, icon.age_mins.unwrap_or(u32::MAX)));
     // Labels cover no symbol and not my radio's dot.
-    let mut taken: Vec<Area> = nodes.iter().map(|&(x, y, ..)| (x - 7, y - 7, x + 7, y + 7)).collect();
+    let mut taken: Vec<Area> = nodes.iter().map(|&(x, y, ..)| (x - 8, y - 8, x + 8, y + 8)).collect();
     for (pos, _) in marks.iter().filter(|(_, m)| *m == Mark::Me) {
         let (x, y) = px(*pos);
         taken.push((x - 12, y - 12, x + 12, y + 12));
@@ -381,7 +381,7 @@ fn overlap(a: Area, b: Area) -> bool {
     a.0 <= b.2 && b.0 <= a.2 && a.1 <= b.3 && b.1 <= a.3
 }
 
-/// A target's symbol, 2 px wide and outlined: a square for a repeater, a circle for a person,
+/// A target's symbol, 3 px wide and outlined: a square for a repeater, a circle for a person,
 /// a diamond for a room, a triangle for a sensor.
 fn target(img: &mut RgbaImage, x: i64, y: i64, kind: NodeKind, color: Rgba<u8>) {
     // Whether (dx, dy) is inside the shape at size s.
@@ -391,7 +391,7 @@ fn target(img: &mut RgbaImage, x: i64, y: i64, kind: NodeKind, color: Rgba<u8>) 
         NodeKind::Room => (dx.abs() + dy.abs()) * 5 <= s * 6,
         NodeKind::Sensor => dy * 5 <= s * 4 && (dy + s) * 5 >= dx.abs() * 9,
     };
-    for (paint, outer, inner) in [(OUTLINE, 7, 3), (color, 6, 4)] {
+    for (paint, outer, inner) in [(OUTLINE, 8, 2), (color, 7, 4)] {
         for dy in -outer..=outer {
             for dx in -outer..=outer {
                 if inside(dx, dy, outer) && !inside(dx, dy, inner) {
