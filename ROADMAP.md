@@ -89,6 +89,7 @@ from what the radio advertises over Bluetooth. Design:
 - [ ] Offer our Bluetooth fixes to the meshcore-rs project, so `vendor/`
   can go
 - [x] Tag v0.1.0 and release notes
+- [x] Tag v0.2.0 and release notes
 - [x] GitHub Actions CI: tests and clippy
 
 ## Known small debts
