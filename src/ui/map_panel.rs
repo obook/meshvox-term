@@ -100,12 +100,13 @@ pub(super) fn draw_map(frame: &mut Frame, app: &App, area: Rect, map: &mut MapSt
         .nodes
         .iter()
         .filter_map(|n| {
-            let age_days =
-                (n.heard != 0).then(|| ((now - i64::from(n.heard)).max(0) / 86_400) as u32);
+            // In minutes: the map is rebuilt at most once a minute for it.
+            let age_mins = (n.heard != 0).then(|| ((now - i64::from(n.heard)).max(0) / 60) as u32);
             let icon = Icon {
                 kind: n.kind,
                 name: n.name.clone(),
-                age_days,
+                age_mins,
+                hops: n.path_len,
             };
             n.pos.map(|p| {
                 (

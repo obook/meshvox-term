@@ -62,7 +62,8 @@ fn icon() -> Icon {
     Icon {
         kind: NodeKind::Repeater,
         name: "33EYSI_F4LW".into(),
-        age_days: Some(2),
+        age_mins: Some(2 * 24 * 60),
+        hops: 1,
     }
 }
 
@@ -88,13 +89,14 @@ fn initials_like_the_meshcore_map() {
 
 #[test]
 fn freshness_colors() {
+    const DAY: u32 = 24 * 60;
     assert_eq!(
         [
             freshness(None),
-            freshness(Some(2)),
-            freshness(Some(7)),
-            freshness(Some(15)),
-            freshness(Some(30))
+            freshness(Some(2 * DAY)),
+            freshness(Some(7 * DAY)),
+            freshness(Some(15 * DAY)),
+            freshness(Some(30 * DAY))
         ],
         [SLATE, RECENT, STALE, OLD, EXTINCT]
     );
@@ -133,7 +135,8 @@ fn plain_person_icon_is_a_name_colored_disc_with_initials() {
     let alice = Icon {
         kind: NodeKind::Chat,
         name: "Alice".into(),
-        age_days: None,
+        age_mins: None,
+        hops: -1,
     };
     let img = compose(
         &world_z1(),
@@ -168,12 +171,28 @@ fn the_selected_node_gets_a_pin_in_both_looks() {
         RECENT,
         "the node's icon in the head"
     );
+    // The Hacker look: a white square for a repeater, and its label up right.
     let img = compose(&world_z1(), 512, 512, &mut tiles, &selected, Look::Night);
-    assert_eq!(*img.get_pixel(256, 256 - 10), SELECTED);
+    assert_eq!(*img.get_pixel(256 + 5, 256), SELECTED);
+    let label = (256 + 22..512)
+        .flat_map(|x| (0..256 - 22).map(move |y| (x, y)))
+        .filter(|&(x, y)| *img.get_pixel(x, y) == SELECTED)
+        .count();
+    assert!(label > 100, "label drawn: {label} white pixels");
+}
+
+#[test]
+fn the_hacker_label_says_who_and_when() {
+    let mut node = icon();
+    assert_eq!(data_block(&node, false), ["33EYSI_F4LW"]);
+    assert_eq!(data_block(&node, true), ["33EYSI_F4LW", "RPT 1 HOP", "HEARD 2D"]);
+    node.name = "Café 🚀 relais de la côte d'argent".into();
+    node.hops = -1;
+    node.age_mins = Some(90);
     assert_eq!(
-        *img.get_pixel(256, 256 - PIN_HEAD as u32),
-        PIN_CROSS,
-        "a dark cross in the head"
+        data_block(&node, true),
+        ["CAF  RELAIS DE L", "RPT FLOOD", "HEARD 1H"],
+        "capitals the font has, 16 at most"
     );
 }
 
@@ -336,9 +355,9 @@ fn marks_are_drawn_at_their_position() {
         Look::Night,
     );
     assert_eq!(
-        *img.get_pixel(256, 256 - 10),
+        *img.get_pixel(256 + 5, 256),
         SELECTED,
-        "the selected node's pin is drawn on top"
+        "the selected node's symbol is drawn on top"
     );
     assert_eq!(*img.get_pixel(256, 300), BACKGROUND);
 }
