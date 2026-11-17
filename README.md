@@ -27,9 +27,12 @@ The program is `target/release/meshvox-term`.
 
 ## Pair the radio
 
-Pair once from `bluetoothctl`, under either firmware. The radio wants a
-bond made with its PIN; pairing from the KDE Bluetooth settings leaves a
-bond the radio drops a few seconds after each connection.
+The radio wants a bond made with its PIN; pairing from the KDE Bluetooth
+settings leaves a bond the radio drops a few seconds after each connection.
+Pair from meshvox-term instead: in the Device tab, press `p`, then type the
+PIN shown on the radio's screen (the M5 picks a new one at each boot). It
+removes the old bond first, and does it on its own once when a Meshtastic
+radio's bond is stale. Or pair once from `bluetoothctl`:
 
 ```
 bluetoothctl
@@ -39,12 +42,10 @@ scan on
 pair AA:BB:CC:DD:EE:FF
 ```
 
-Put your radio's address in the last line, then type the PIN shown on the
-radio's screen (the M5 picks a new one at each boot). Or let
+Put your radio's address in the last line, then type the PIN. Or let
 `scripts/pair-radio.py` do it all: it finds the radio, removes an old
 pairing and asks for the PIN when bluetoothctl needs it. After switching the
-radio to the other firmware, run `remove` with its address first and pair
-again: the old bond no longer works. To check the link:
+radio to the other firmware, pair again: the old bond no longer works. To check the link:
 
 ```
 meshvox-term --probe
@@ -78,6 +79,8 @@ Options:
 - `--cli "<command>"`: send a text command to a MeshCore radio, print its
   reply and exit, e.g. `--cli "set ui.backlight_on_keys 1"`
 - `--image auto|sixel|kitty|iterm2|halfblocks`: how the map image is shown
+- `--tiles ign|osm`: the map, Plan IGN (the default, with OpenStreetMap
+  outside France) or OpenStreetMap
 - `--console`: ASCII look with a radar of letters instead of the map;
   automatic on the Linux console (`TERM=linux`)
 
@@ -85,23 +88,49 @@ The map looks best in a terminal that shows images with the Kitty, Sixel
 or iTerm2 protocol, like Konsole. Other terminals get a coarser picture
 made of half blocks.
 
-## Keys
+## Tabs and keys
 
-- Tab: go from the contact list to the map, then to the input line
-- Arrows: pick a contact in the list, pan the map
-- `+` and `-`: zoom the map
-- Enter: send the message you typed
+The screen has four tabs, as in the MeshVox Android app:
+
+- **1 Chats**: the public channel and the conversations, latest first, with
+  their last message; the open conversation on the right
+- **2 Contacts**: the nodes, with the selected node's card. Four filters,
+  as in MeshVox: Contacts (people), Favorites, Repeaters, All (with my
+  radio), Contacts first; and the online, offline and total counts. The
+  Map tab's card and its `[` and `]` keys follow the filtered list: pick
+  Repeaters to ping a repeater. The favorites are the
+  ones set on the radio, from the MeshVox app for instance
+- **3 Map**: the map and the selected node's card
+- **4 Device**: my radio's card
+
+A node heard in the last hour is online: its name is in bold wherever it
+is written, and marked in the contact list.
+
+Keys:
+
+- `1` to `4`: open a tab
+- Up and Down: pick a conversation (Chats) or a node (Contacts)
+- Left and Right: pick a filter (Contacts)
+- Enter: write to the open conversation (Chats) or to the selected node
+  (Contacts); in the input line, send
+- Esc or Tab: leave the input line
 - PgUp and PgDn: scroll the conversation
+- Arrows: pan the map; `+` and `-`: zoom; `[` and `]`: previous or next
+  node (Map)
 - `p`: ping the selected node (MeshCore repeater or room), or trace the
-  route to it (Meshtastic)
+  route to it (Meshtastic), from the Contacts and Map tabs
+- `s` in the Map tab, Hacker look: turn the radar sweep on or off
+- `p` in the Device tab: pair the radio again; type its PIN, then Enter
+  (Esc cancels)
 - `q` or Ctrl+C: quit
 
-Outside the input line only, `p` pings and `q` quits.
+Outside the input line only, the digits switch tabs and `q` quits.
 
 ## Files
 
 - Messages: `~/.local/share/meshvox-term/history.jsonl`
-- Map tiles: `~/.cache/meshvox-term/tiles/`
+- Map tiles: `~/.cache/meshvox-term/tiles-ign/` (Plan IGN) and
+  `~/.cache/meshvox-term/tiles/` (OpenStreetMap)
 - Log: `$XDG_RUNTIME_DIR/meshvox-term.log`
 
 The project was called loraterm, and meshcore-m5 before that. On its first
@@ -114,7 +143,8 @@ The plan is in [ROADMAP.md](ROADMAP.md).
 
 GPL-3.0, see [LICENSE](LICENSE).
 
-- Map tiles: (c) OpenStreetMap contributors.
+- Map tiles: (c) IGN (Plan IGN, Licence Ouverte, through the Geoplateforme)
+  and (c) OpenStreetMap contributors.
 - Node icons: map.meshcore.io by Rastislav Vysoky, MIT, see
   `assets/node_types/LICENSE`.
 - `vendor/meshcore-rs`: meshcore-rs 0.2.0 (MIT) with our Bluetooth fixes.

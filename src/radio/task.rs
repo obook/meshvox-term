@@ -1,6 +1,7 @@
 //! radio/task.rs
 //! The radio task: connects to a radio, runs a session, reconnects after a loss and stops
-//! for good when the history cannot be written or the interface is gone.
+//! for good when the history cannot be written or the interface is gone. A pairing (key p,
+//! or a stale bond found) runs between two connections.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
@@ -15,8 +16,11 @@ use meshcore_rs::MeshCore;
 
 use super::link::{ble_disconnect, candidates, connect_to, Candidate};
 use super::meshtastic::{self, RepairNeeded, Transport};
+use super::pair::pair;
 use super::session::session;
-use super::{FromRadio, Firmware, HistoryWriteFailed, Link, ToRadio, ANY_RADIO};
+use super::{
+    FromRadio, Firmware, HistoryWriteFailed, Link, PairAsked, Pairing, ToRadio, ANY_RADIO,
+};
 use crate::config::RETRY;
 
 /// Run the radio in `rt`. It reconnects on its own and stops once the UI is gone;
@@ -53,6 +57,9 @@ pub(super) async fn run(
     let label = device.clone().unwrap_or_else(|| ANY_RADIO.into());
     // With --device the firmware cannot change between two links: skip the 4 s rescan.
     let mut known: Option<Candidate> = None;
+    // A stale bond is paired again once on its own; after that, on the user's key only, so a
+    // cancelled PIN is not asked again and again.
+    let mut auto_paired = false;
     loop {
         if tx
             .send(FromRadio::Link(Link::Searching(label.clone())))
@@ -120,6 +127,12 @@ pub(super) async fn run(
                 match end {
                     Ok(true) => "link lost".to_string(),
                     Ok(false) => return, // UI gone
+                    Err(e) if e.is::<PairAsked>() => {
+                        if !pair_radio(Some(&name), &tx, &mut cmds).await {
+                            return;
+                        }
+                        continue;
+                    }
                     Err(e) if e.is::<HistoryWriteFailed>() => {
                         // Stop for good: every new fetch would lose a message.
                         tracing::error!("radio: {e:#}");
@@ -132,17 +145,26 @@ pub(super) async fn run(
                 }
             }
             Err(e) if e.is::<RepairNeeded>() => {
-                // Retrying will not heal a stale bond: say what to do, and keep trying, so
-                // the radio comes back once it is paired again.
+                // Retrying will not heal a stale bond: pair the radio again, or say what to do
+                // and keep trying, so the radio comes back once it is paired again.
                 let _ = tx.send(FromRadio::Link(Link::Lost(format!("{e:#}"))));
-                tokio::time::sleep(RETRY).await;
+                let stale = e.downcast_ref::<RepairNeeded>().map(|r| r.0.clone());
+                let going = match std::mem::replace(&mut auto_paired, true) {
+                    false => pair_radio(stale.as_deref(), &tx, &mut cmds).await,
+                    true => pause(device.as_deref(), &tx, &mut cmds).await,
+                };
+                if !going {
+                    return;
+                }
                 continue;
             }
             Err(e) => {
                 // Most often the radio is busy with a phone: keep the "Searching" banner
                 // and its hint.
                 tracing::info!("radio not reached: {e:#}");
-                tokio::time::sleep(RETRY).await;
+                if !pause(device.as_deref(), &tx, &mut cmds).await {
+                    return;
+                }
                 continue;
             }
         };
@@ -150,6 +172,52 @@ pub(super) async fn run(
         if tx.send(FromRadio::Link(Link::Lost(reason))).is_err() {
             return;
         }
-        tokio::time::sleep(RETRY).await;
+        if !pause(device.as_deref(), &tx, &mut cmds).await {
+            return;
+        }
     }
+}
+
+/// The pause before the next attempt; a pair request (key p) is run during it. false: the
+/// interface is gone.
+async fn pause(
+    device: Option<&str>,
+    tx: &Sender<FromRadio>,
+    cmds: &mut UnboundedReceiver<ToRadio>,
+) -> bool {
+    let end = tokio::time::sleep(RETRY);
+    tokio::pin!(end);
+    loop {
+        tokio::select! {
+            _ = &mut end => return true,
+            cmd = cmds.recv() => match cmd {
+                Some(ToRadio::Pair) => return pair_radio(device, tx, cmds).await,
+                Some(ToRadio::Pin(_)) => {} // left from a pairing that ended
+                Some(cmd) => {
+                    let _ = tx.send(cmd.failed("not connected".into()));
+                }
+                None => return false,
+            }
+        }
+    }
+}
+
+/// Pair `device`, or the first radio found, and tell the interface how it went. false: the
+/// interface is gone.
+async fn pair_radio(
+    device: Option<&str>,
+    tx: &Sender<FromRadio>,
+    cmds: &mut UnboundedReceiver<ToRadio>,
+) -> bool {
+    let state = match pair(device, tx, cmds).await {
+        Ok(name) => {
+            tracing::info!("paired with {name}");
+            Pairing::Paired(name, chrono::Utc::now().timestamp())
+        }
+        Err(e) => {
+            tracing::warn!("pairing failed: {e:#}");
+            Pairing::Failed(format!("{e:#}"))
+        }
+    };
+    tx.send(FromRadio::Pairing(state)).is_ok() && !cmds.is_closed()
 }

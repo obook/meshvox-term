@@ -1,6 +1,6 @@
 [package]
 name = "meshvox-term"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "GPL-3.0-only"
 authors = ["Olivier Booklage <olivier.booklage@ac-bordeaux.fr>"]
@@ -10,6 +10,8 @@ description = "Terminal client for a MeshCore or Meshtastic radio over Bluetooth
 anyhow = "1"
 # Same version as meshcore-rs: one btleplug, one BLE manager for both firmwares.
 btleplug = "0.12"
+# BlueZ pairing with the PIN the radio shows: an agent, which btleplug lacks.
+bluer = { version = "0.17", features = ["bluetoothd"] }
 # Local time of messages.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4", features = ["derive"] }
@@ -41,6 +43,15 @@ tempfile = "3"
 
 # meshcore-rs 0.2.0 patched in src/meshcore/ble.rs: one BLE manager per process and an
 # unsubscribe before subscribe (every reconnect duplicated all notifications), a leftover
-# scan stopped before a new one, and ble_disconnect() (disconnect() leaves the link up).
+# scan stopped before a new one, and ble_disconnect() (disconnect() leaves the link up);
+# in src/reader.rs, the custom variables read in the firmware's "name:value,..." form.
 [patch.crates-io]
 meshcore-rs = { path = "vendor/meshcore-rs" }
+
+# cargo run stays usable: the map's PNG encoding and image work are 50 times slower
+# unoptimized, and froze the app at each zoom.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

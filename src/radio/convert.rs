@@ -34,7 +34,33 @@ pub fn my_radio(
         max_tx_power: me.max_tx_power,
         // Firmware ADVERT_LOC_NONE (0): the advert carries no position.
         shares_position: me.adv_loc_policy != 0,
+        gps: None,
         preset: None,
+        region: None,
+    }
+}
+
+/// Firmware CMD_GET_DEFAULT_FLOOD_SCOPE; meshcore-rs does not know it.
+pub const CMD_GET_DEFAULT_REGION: u8 = 64;
+
+/// The region in a RESP_CODE_DEFAULT_FLOOD_SCOPE (28) frame: the code alone when none is set,
+/// else the name on 31 bytes (NUL padded), then a 16-byte key. None: another frame.
+pub fn region_from_frame(frame: &[u8]) -> Option<Option<String>> {
+    let (&28, rest) = frame.split_first()? else {
+        return None;
+    };
+    let name = rest.get(..31).unwrap_or_default();
+    let name = name.split(|&b| b == 0).next().unwrap_or_default();
+    Some((!name.is_empty()).then(|| String::from_utf8_lossy(name).into_owned()))
+}
+
+/// The GPS state in the radio's custom variables: "gps" is 1 or 0, and only there when the
+/// firmware has a GPS.
+pub fn gps_from_vars(vars: &std::collections::HashMap<String, String>) -> Option<bool> {
+    match vars.get("gps")?.trim() {
+        "1" => Some(true),
+        "0" => Some(false),
+        _ => None,
     }
 }
 
@@ -102,6 +128,7 @@ impl From<&Contact> for Node {
             },
             path_len: contact.path_len,
             path: contact.out_path.clone(),
+            favorite: contact.flags & 1 != 0,
         }
     }
 }

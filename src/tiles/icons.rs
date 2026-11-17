@@ -18,8 +18,10 @@ use crate::radio::NodeKind;
 pub struct Icon {
     pub kind: NodeKind,
     pub name: String,
-    /// Days since my radio last heard it; None if never.
-    pub age_days: Option<u32>,
+    /// Minutes since my radio last heard it; None if never.
+    pub age_mins: Option<u32>,
+    /// Hops on the known route; -1 when none is known.
+    pub hops: i8,
 }
 
 /// The pictograms' own background color, replaced by a freshness color.
@@ -34,10 +36,8 @@ pub const OLD: Rgba<u8> = Rgba([207, 64, 48, 255]);
 pub const EXTINCT: Rgba<u8> = Rgba([140, 140, 140, 255]);
 /// The initials and the pictograms' symbols.
 pub const GLYPH: Rgba<u8> = Rgba([255, 255, 255, 255]);
-/// The selected node's map pin: red on the plain map, white (SELECTED) on the night map.
+/// The selected node's map pin (plain map).
 pub const PIN_RED: Rgba<u8> = Rgba([211, 47, 47, 255]);
-/// The cross in the head of the Hacker pin.
-pub const PIN_CROSS: Rgba<u8> = Rgba([40, 40, 40, 255]);
 /// From the pin's tip (on the node) up to the center of its head.
 pub const PIN_HEAD: i64 = 34;
 /// Half the size of an icon, in pixels (icons are 28 x 28).
@@ -113,9 +113,9 @@ pub fn initials(name: &str) -> String {
         .collect()
 }
 
-/// Days since last heard -> the map's freshness color (5, 10 and 20 day thresholds).
-pub fn freshness(age_days: Option<u32>) -> Rgba<u8> {
-    match age_days {
+/// Minutes since last heard -> the map's freshness color (5, 10 and 20 day thresholds).
+pub fn freshness(age_mins: Option<u32>) -> Rgba<u8> {
+    match age_mins.map(|m| m / (24 * 60)) {
         None => SLATE,
         Some(d) if d < FRESHNESS_DAYS[0] => RECENT,
         Some(d) if d < FRESHNESS_DAYS[1] => STALE,
@@ -145,7 +145,7 @@ pub(super) fn draw_icon(img: &mut RgbaImage, cx: i64, cy: i64, icon: &Icon) {
         draw_text(img, cx, cy, &initials(&icon.name));
         return;
     }
-    let color = freshness(icon.age_days);
+    let color = freshness(icon.age_mins);
     for (x, y, pixel) in pictogram(icon.kind).enumerate_pixels() {
         let (px, py) = (cx - ICON_HALF + i64::from(x), cy - ICON_HALF + i64::from(y));
         if pixel[3] == 0

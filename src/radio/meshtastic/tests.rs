@@ -51,7 +51,7 @@ async fn read_until_empty_keeps_what_it_read_before_an_error() {
 #[test]
 fn repair_needed_says_what_to_do() {
     let msg = RepairNeeded("Meshtastic_d940".into()).to_string();
-    assert!(msg.contains("bluetoothctl remove"), "{msg}");
+    assert!(msg.contains("key p in the Device tab"), "{msg}");
 }
 
 use super::convert::*;
@@ -441,4 +441,22 @@ fn the_handshake_keeps_the_gps_mode() {
     };
     absorb(&mut snap, incoming(Incoming::Config(position)), 42);
     assert_eq!(snap.gps, Some(GpsMode::Disabled));
+}
+
+#[test]
+fn the_node_database_favorite_is_kept() {
+    assert!(!node(&bob()).favorite);
+    let fav = node(&pb::NodeInfo {
+        is_favorite: true,
+        ..bob()
+    });
+    assert!(fav.favorite);
+}
+
+#[test]
+fn the_gps_mode_says_on_off_or_none() {
+    use meshtastic::protobufs::config::position_config::GpsMode;
+    assert_eq!(gps_on(GpsMode::Enabled), Some(true));
+    assert_eq!(gps_on(GpsMode::Disabled), Some(false));
+    assert_eq!(gps_on(GpsMode::NotPresent), None);
 }

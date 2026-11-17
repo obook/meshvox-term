@@ -16,10 +16,15 @@ use meshcore_rs::parsing::hex_encode;
 use meshcore_rs::MeshCore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use super::convert::{channel_msg, contact_msg, lipo_percent, my_radio};
+use super::convert::{
+    channel_msg, contact_msg, gps_from_vars, lipo_percent, my_radio, region_from_frame,
+    CMD_GET_DEFAULT_REGION,
+};
 use super::link::now;
 use super::ping::ping;
-use super::{Battery, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, ToRadio};
+use super::{
+    Battery, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, PairAsked, ToRadio,
+};
 use crate::config::{CHECK_EVERY, CONTACTS_TIMEOUT};
 use crate::geo::{pos_from_micro, Pos};
 use crate::history::{self, Msg, Record, PUBLIC};
@@ -39,7 +44,31 @@ pub(super) async fn session(
     if let Err(e) = &dev {
         tracing::info!("device query: {e}");
     }
-    let card = my_radio(&me, dev.as_ref().ok());
+    let mut card = my_radio(&me, dev.as_ref().ok());
+    // An older firmware may not answer: the GPS state is then unknown, not a link failure.
+    match radio.commands().lock().await.get_custom_vars().await {
+        Ok(vars) => card.gps = gps_from_vars(&vars),
+        Err(e) => tracing::info!("custom vars: {e}"),
+    }
+    // meshcore-rs passes the unknown answer on as raw bytes; an older firmware answers an error.
+    let region = radio
+        .commands()
+        .lock()
+        .await
+        .send_multi(
+            &[CMD_GET_DEFAULT_REGION],
+            &[EventType::Unknown, EventType::Error],
+            meshcore_rs::commands::DEFAULT_TIMEOUT,
+        )
+        .await;
+    match region {
+        Ok(event) => {
+            if let EventPayload::Bytes(frame) = event.payload {
+                card.region = region_from_frame(&frame);
+            }
+        }
+        Err(e) => tracing::info!("default region: {e}"),
+    }
     let pos = pos_from_micro(me.adv_lat, me.adv_lon);
     announce(tx, Firmware::MeshCore, card, pos, name);
     // The firmware refuses to move its clock back (it answers an error, which meshcore-rs only
@@ -78,6 +107,9 @@ pub(super) async fn session(
             }
             cmd = cmds.recv() => {
                 let Some(cmd) = cmd else { return Ok(false) };
+                if cmd == ToRadio::Pair {
+                    return Err(PairAsked.into());
+                }
                 if let ToRadio::Ping { key, prefix } = &cmd {
                     ping(radio, key, prefix, tx);
                     continue;
@@ -181,7 +213,7 @@ pub(super) fn save(history: &Path, tx: &Sender<FromRadio>, rec: Record) -> anyho
     Ok(written.map_err(HistoryWriteFailed)?)
 }
 
-/// Send a direct or public message, then save it as sent.
+/// Send a direct or public message, then save it as sent; or send an advert.
 pub(super) async fn send(
     radio: &MeshCore,
     history: &Path,
@@ -222,7 +254,16 @@ pub(super) async fn send(
                 ack: None,
             }
         }
-        ToRadio::Ping { .. } => return Ok(()), // handled by ping()
+        // Ping: handled by ping(); Pair: ends the session; Pin: only while pairing.
+        ToRadio::Ping { .. } | ToRadio::Pair | ToRadio::Pin(_) => return Ok(()),
+        ToRadio::Advert { flood } => {
+            radio.commands().lock().await.send_advert(*flood).await?;
+            let _ = tx.send(FromRadio::Advert {
+                flood: *flood,
+                error: None,
+            });
+            return Ok(());
+        }
     };
     save(history, tx, Record::Msg(msg))
 }

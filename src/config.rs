@@ -55,6 +55,10 @@ pub const FRESHNESS_DAYS: [u32; 3] = [5, 10, 20];
 
 /// OSM usage policy: identify the app, cache tiles, at most two downloads at once (we do one).
 pub const TILE_URL: &str = "https://tile.openstreetmap.org";
+/// The IGN Geoplateforme (open data, no key): Plan IGN in Web Mercator, the same z/x/y grid
+/// as OSM. It answers 404 where it has no tile, outside France.
+pub const IGN_URL: &str = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0\
+&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/png";
 /// Names the app to the tile server, as the OSM policy requires.
 pub const TILE_USER_AGENT: &str = concat!(
     "meshvox-term/",
@@ -77,5 +81,6 @@ pub const BOOT: Duration = Duration::from_millis(1500);
 /// Battery under this percentage is shown as an alert.
 pub const LOW_BATTERY: u8 = 20;
 
-/// A contact heard within this many seconds is marked in the list.
-pub const FRESH_SECS: i64 = 600;
+/// A node heard within this many seconds is online, as in the MeshVox app: its name is bold
+/// wherever it is written, and marked in the contact list.
+pub const ONLINE_SECS: i64 = 3600;

@@ -8,8 +8,9 @@
 use super::format::*;
 use super::menu::*;
 use super::*;
+use crate::app::{Filter, Tab};
 use crate::history::{Msg, Record};
-use crate::radio::{Battery, Firmware, FromRadio, Link, MyRadio, Node, NodeKind};
+use crate::radio::{Battery, Firmware, FromRadio, Link, MyRadio, Node, NodeKind, Pairing};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn render(draw_fn: impl FnOnce(&mut Frame)) -> String {
@@ -111,7 +112,7 @@ fn banner_shows_notice() {
 #[test]
 fn thread_shows_ack_state() {
     let mut app = App::new("x", vec![Record::Msg(sent("hello"))]);
-    app.selected = 1;
+    app.chat = "a4cb8fcbd941".into();
     assert!(screen(&app).contains("[TX]"));
     app.apply(FromRadio::Record(Record::Ack {
         tag: "01020304".into(),
@@ -130,7 +131,7 @@ fn lines_look_like_irc() {
 fn my_messages_carry_my_node_name() {
     let mut app = App::new("x", vec![Record::Msg(sent("hello"))]);
     app.apply(FromRadio::Link(Link::Connected("MeshCore-bbok".into())));
-    app.selected = 1;
+    app.chat = "a4cb8fcbd941".into();
     assert!(screen(&app).contains("<bbok> hello"));
 }
 
@@ -144,14 +145,18 @@ fn long_message_wraps_instead_of_being_cut() {
 fn older_messages_are_reachable_by_scrolling() {
     let mut app = App::new(
         "x",
-        (1..=10).map(|i| public(&format!("msg{i:02}"))).collect(),
+        (1..=40).map(|i| public(&format!("msg{i:02}"))).collect(),
     );
     let s = screen(&app);
-    assert!(s.contains("msg10") && !s.contains("msg01"), "{s}");
-    app.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+    assert!(s.contains("<Bob> msg40") && !s.contains("msg01"), "{s}");
+    for _ in 0..4 {
+        app.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+    }
     assert!(screen(&app).contains("msg01"));
-    app.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
-    assert!(screen(&app).contains("msg10"));
+    for _ in 0..4 {
+        app.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+    }
+    assert!(screen(&app).contains("<Bob> msg40"));
 }
 
 #[test]
@@ -164,7 +169,7 @@ fn status_of_a_long_message_stays_visible() {
         "x",
         vec![Record::Msg(long), Record::Ack { tag: "01".into() }],
     );
-    app.selected = 1;
+    app.chat = "a4cb8fcbd941".into();
     assert!(screen(&app).contains("[ACK]"));
 }
 
@@ -194,7 +199,7 @@ fn map_title_shows_the_radar_and_the_selected_node() {
         pos: Some(alice),
         ..Default::default()
     }]));
-    app.selected = 1;
+    app.tab = Tab::Map;
     let s = screen(&app);
     assert!(
         s.contains("[ RADAR :: ") && s.contains("[ NODE :: Alice ]") && s.contains("2.3km"),
@@ -210,7 +215,9 @@ fn coordinates_read_like_a_gps() {
 
 #[test]
 fn map_credits_openstreetmap() {
-    assert!(screen(&App::new("x", vec![])).contains("(c) OpenStreetMap contributors"));
+    let mut app = App::new("x", vec![]);
+    app.tab = Tab::Map;
+    assert!(screen(&app).contains("(c) OpenStreetMap contributors"));
 }
 
 #[test]
@@ -223,9 +230,11 @@ fn nodes_show_id_name_and_type() {
         pos: None,
         ..Default::default()
     }]));
+    app.tab = Tab::Contacts;
+    app.filter = Filter::Repeaters;
     let s = screen(&app);
     assert!(
-        s.contains("#PUBLIC") && s.contains("a4cb8f Relay-Bdx") && s.contains("RPT"),
+        s.contains("[ NODES (1) ]") && s.contains("a4cb8f Relay-Bdx") && s.contains("RPT"),
         "{s}"
     );
 }
@@ -244,6 +253,8 @@ fn a_name_with_an_emoji_keeps_the_columns_aligned() {
         relay("aaaaaaaaaaaa", "🐱 SHA-40-GMD"),
         relay("bbbbbbbbbbbb", "33CSTR-REP-NASH"),
     ]));
+    app.tab = Tab::Contacts;
+    app.filter = Filter::Repeaters;
     let dir = tempfile::tempdir().unwrap();
     let mut map = MapState::new(
         ratatui_image::picker::Picker::halfblocks(),
@@ -289,7 +300,8 @@ fn relay_app() -> App {
         ..Default::default()
     };
     app.apply(FromRadio::Nodes(vec![relay]));
-    app.selected = 1;
+    app.tab = Tab::Map;
+    app.filter = Filter::Repeaters;
     app
 }
 
@@ -305,6 +317,13 @@ fn card_shows_a_repeater() {
     ] {
         assert!(s.contains(want), "{want} missing in\n{s}");
     }
+}
+
+#[test]
+fn the_sweep_key_shows_in_the_hacker_look_only() {
+    let app = relay_app();
+    assert!(screen(&app).contains("[S] SWEEP"));
+    assert!(!normal(&app).contains(" s "), "{}", normal(&app));
 }
 
 #[test]
@@ -339,10 +358,55 @@ fn card_shows_the_ping_result() {
 }
 
 #[test]
-fn card_for_the_public_channel() {
-    let mut app = relay_app();
-    app.selected = 0;
-    assert!(screen(&app).contains("CHANNEL #PUBLIC"));
+fn chats_tab_lists_the_conversations_with_their_last_message() {
+    let mut app = App::new("x", vec![public("hi all")]);
+    app.apply(FromRadio::Nodes(nodes(1)));
+    app.apply(FromRadio::Record(Record::Msg(Msg {
+        conv: "000000000000".into(),
+        ..sent("see you")
+    })));
+    let s = screen(&app);
+    for want in ["[ COMMS (2) ]", "#PUBLIC", "Bob: hi all", "node0", "me: see you"] {
+        assert!(s.contains(want), "{want} missing in\n{s}");
+    }
+    let s = normal(&app);
+    assert!(s.contains("Chats (2)") && s.contains("# Public"), "{s}");
+}
+
+#[test]
+fn the_tab_bar_names_the_four_tabs_and_counts_unread() {
+    let mut app = App::new("x", vec![]);
+    let s = normal(&app);
+    assert!(s.contains("1 Chats") && s.contains("2 Contacts") && s.contains("3 Map") && s.contains("4 Device"), "{s}");
+    app.tab = Tab::Map;
+    app.apply(FromRadio::Record(public("hello")));
+    assert!(normal(&app).contains("1 Chats (1)"));
+    assert!(screen(&app).contains("1 CHATS (1)"));
+}
+
+#[test]
+fn device_tab_shows_my_radio_or_waits_for_it() {
+    let mut app = radio_app();
+    app.tab = Tab::Device;
+    let s = normal(&app);
+    assert!(s.contains("My radio: bbok") && s.contains("869.525 MHz"), "{s}");
+    assert!(s.contains("advert to all") && !s.contains("SENT"), "{s}");
+    app.apply(FromRadio::Advert {
+        flood: false,
+        error: None,
+    });
+    assert!(normal(&app).contains("SENT   TO NEIGHBOURS"));
+    let mut app = App::new("x", vec![]);
+    app.tab = Tab::Device;
+    assert!(normal(&app).contains("No radio connected yet"));
+    // The pairing shows without a radio too.
+    app.apply(FromRadio::Pairing(Pairing::Pin("MeshCore-bbok".into())));
+    app.pin = "123".into();
+    let s = normal(&app);
+    assert!(s.contains("PIN    Type the PIN shown on the screen of MeshCore-bbok"), "{s}");
+    assert!(s.contains("       > 123_") && s.contains("Esc: cancel"), "{s}");
+    app.apply(FromRadio::Pairing(Pairing::Paired("MeshCore-bbok".into(), 0)));
+    assert!(normal(&app).contains("PAIR   PAIRED MeshCore-bbok"));
 }
 
 #[test]
@@ -368,7 +432,9 @@ fn card_helpers() {
 #[test]
 fn normal_banner_is_plain_english() {
     let mut app = App::new("MeshCore-bbok", vec![]);
-    assert!(normal(&app).contains("Searching for MeshCore-bbok... (is a phone connected to it?)"));
+    let s = normal(&app);
+    let spins = ['|', '/', '-', '\\'].iter().any(|c| s.contains(&format!("Searching for MeshCore-bbok {c} (is a phone")));
+    assert!(spins, "a turning bar while searching: {s}");
     app.apply(FromRadio::Link(Link::Connected("MeshCore-bbok".into())));
     app.apply(FromRadio::Battery(Battery {
         pct: 87,
@@ -388,7 +454,7 @@ fn normal_banner_is_plain_english() {
 #[test]
 fn normal_thread_and_prompt() {
     let mut app = App::new("x", vec![Record::Msg(sent("hello"))]);
-    app.selected = 1;
+    app.chat = "a4cb8fcbd941".into();
     let s = normal(&app);
     assert!(
         s.contains("me  hello")
@@ -405,18 +471,18 @@ fn normal_thread_and_prompt() {
 
 #[test]
 fn normal_panels_are_plain() {
-    let s = normal(&relay_app());
-    for want in [
-        "Contacts (1)",
-        "# Public",
-        "repeater",
-        " Map ",
-        "Node: 33EYSI",
-        "REPEATER",
-    ] {
+    let mut app = relay_app();
+    let s = normal(&app);
+    for want in [" Map ", "Node: 33EYSI", "REPEATER"] {
         assert!(s.contains(want), "{want} missing in\n{s}");
     }
-    assert!(!s.contains("RADAR") && !s.contains("[ NODES"), "{s}");
+    assert!(!s.contains("RADAR"), "{s}");
+    app.tab = Tab::Contacts;
+    let s = normal(&app);
+    for want in ["Contacts (1)", "repeater", "Node: 33EYSI"] {
+        assert!(s.contains(want), "{want} missing in\n{s}");
+    }
+    assert!(!s.contains("[ NODES"), "{s}");
 }
 
 #[test]
@@ -485,10 +551,15 @@ fn radio_app() -> App {
         tx_power: 22,
         max_tx_power: 22,
         shares_position: true,
+        gps: Some(false),
         preset: None,
+        region: Some(Some("fr-33".into())),
     }));
     app.apply(FromRadio::Nodes(nodes(11)));
     app.selected = 0;
+    app.tab = Tab::Contacts;
+    // My radio is listed with the All filter only.
+    app.filter = Filter::All;
     app
 }
 
@@ -504,7 +575,9 @@ fn card_for_my_radio() {
         "869.525 MHz",
         "BW 250 kHz SF 11 CR 5",
         "22 dBm (max 22)",
-        "GPS    SHARED",
+        "REGION fr-33",
+        "ADVERT POSITION SHARED",
+        "GPS    OFF",
         "NODES  11",
         "LINK",
     ];
@@ -522,7 +595,15 @@ fn my_radio_row_in_both_looks() {
 
 #[test]
 fn footer_lists_the_keys() {
-    assert!(screen(&App::new("x", vec![])).contains("[TAB] CYCLE"));
+    let mut app = App::new("x", vec![]);
+    assert!(screen(&app).contains("[1-4] TABS"));
+    app.tab = Tab::Map;
+    let s = normal(&app);
+    assert!(s.contains(" +/- zoom") && s.contains(" [ ] node"), "{s}");
+    app.tab = Tab::Chats;
+    app.typing = true;
+    let s = normal(&app);
+    assert!(s.contains(" Esc leave input") && !s.contains("quit"), "{s}");
 }
 
 #[test]
@@ -584,7 +665,7 @@ fn console_message_text_is_safe() {
         ..Default::default()
     };
     app.apply(FromRadio::Nodes(vec![cat]));
-    app.selected = 1;
+    app.chat = "01".into();
     let s = console(app, Theme::Hacker);
     assert!(s.contains("COMMS // ? Cat") && !s.contains('🐱'), "{s}");
 }
@@ -609,11 +690,14 @@ fn console_map_is_a_radar_of_letters() {
         ..Default::default()
     };
     app.apply(FromRadio::Nodes(vec![relay]));
+    app.tab = Tab::Map;
     let s = console(app, Theme::Normal);
-    // The radar is the middle panel: columns 33 to 66 of the 100-column test screen.
+    // The radar is the left panel: the first 68 columns of the 100-column test screen, above
+    // the keys line.
     let radar: Vec<String> = s
         .lines()
-        .map(|line| line.chars().skip(33).take(33).collect())
+        .take(29)
+        .map(|line| line.chars().take(68).collect())
         .collect();
     let row_of = |mark: char| radar.iter().position(|line| line.contains(mark));
     let (me_row, relay_row) = (row_of('+'), row_of('Q'));
@@ -634,7 +718,8 @@ fn the_map_panel_reports_its_size_in_pixels() {
         crate::tiles::Tiles::offline(dir.path().into()),
     );
     assert_eq!(map.size_px(), None);
-    let app = App::new("x", vec![]);
+    let mut app = App::new("x", vec![]);
+    app.tab = Tab::Map;
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
     terminal
         .draw(|f| draw(f, &app, &mut map, Theme::Normal))
@@ -702,10 +787,134 @@ fn recent_contacts_are_marked_in_the_list() {
     let mut app = App::new("x", vec![]);
     // Different name lengths give different prefixes.
     app.apply(FromRadio::Nodes(vec![node("aa", 60), node("bbb", 7200), node("cccc", -1)]));
+    app.tab = Tab::Contacts;
     let s = normal(&app);
-    let line = |name: &str| s.lines().find(|l| l.contains(name)).unwrap().to_string();
+    // The list is the left column; the card on the right names the selected node too.
+    let line = |name: &str| {
+        s.lines()
+            .map(|l| l.chars().take(32).collect::<String>())
+            .find(|l| l.contains(name))
+            .unwrap()
+    };
     assert!(line("aa").contains("● aa"), "{s}");
     assert!(!line("bbb").contains('●'), "{s}");
     assert!(!line("cccc").contains('●'), "{s}");
-    assert!(screen(&app).lines().any(|l| l.contains("+aa")), "{s}");
+    let h = screen(&app);
+    assert!(h.lines().any(|l| l.contains("+aa")), "{h}");
+}
+
+/// Whether the first cell of `text` on the test screen is bold.
+fn is_bold(app: &App, theme: Theme, text: &str) -> bool {
+    let dir = tempfile::tempdir().unwrap();
+    let mut map = MapState::new(
+        ratatui_image::picker::Picker::halfblocks(),
+        crate::tiles::Tiles::offline(dir.path().into()),
+    );
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|f| draw(f, app, &mut map, theme)).unwrap();
+    let buf = terminal.backend().buffer();
+    let first: Vec<char> = text.chars().collect();
+    for y in 0..30 {
+        // Only the left column: the card on the right names the selected node too.
+        for x in 0..32 - first.len() as u16 {
+            if (0..first.len()).all(|i| buf[(x + i as u16, y)].symbol() == first[i].to_string()) {
+                return buf[(x, y)].modifier.contains(Modifier::BOLD);
+            }
+        }
+    }
+    panic!("{text} not on screen");
+}
+
+#[test]
+fn online_names_are_bold_in_the_lists() {
+    let now = chrono::Utc::now().timestamp();
+    let node = |prefix: &str, name: &str, ago: i64| Node {
+        prefix: prefix.into(),
+        name: name.into(),
+        kind: NodeKind::Repeater,
+        heard: (now - ago) as u32,
+        ..Default::default()
+    };
+    let mut app = App::new("x", vec![]);
+    // Heard 50 minutes ago: online (within the hour); two hours ago: not.
+    app.apply(FromRadio::Nodes(vec![
+        node("aaaaaaaaaaaa", "Online", 3000),
+        node("bbbbbbbbbbbb", "Offline", 7200),
+        node("cccccccccccc", "Alpha", 7200),
+    ]));
+    app.filter = Filter::Repeaters;
+    // Alpha, first by name: the highlighted row is bold whatever its state.
+    app.selected = 0;
+    for theme in [Theme::Normal, Theme::Hacker] {
+        app.tab = Tab::Contacts;
+        assert!(is_bold(&app, theme, "Online"), "{theme:?}");
+        assert!(!is_bold(&app, theme, "Offline"), "{theme:?}");
+    }
+    for (conv, text) in [("aaaaaaaaaaaa", "for Online"), ("bbbbbbbbbbbb", "for Offline")] {
+        app.apply(FromRadio::Record(Record::Msg(Msg {
+            conv: conv.into(),
+            ..sent(text)
+        })));
+    }
+    app.tab = Tab::Chats;
+    assert!(is_bold(&app, Theme::Normal, "Online"));
+    assert!(!is_bold(&app, Theme::Normal, "Offline"));
+}
+
+#[test]
+fn contacts_tab_shows_the_filters_and_the_counts() {
+    let now = chrono::Utc::now().timestamp();
+    let mut app = App::new("x", vec![]);
+    let mut ns = nodes(3);
+    ns[0].heard = (now - 60) as u32;
+    ns[1].kind = NodeKind::Repeater;
+    app.apply(FromRadio::Nodes(ns));
+    app.tab = Tab::Contacts;
+    // People first: node0 (online) and node2; the repeater only under All.
+    let s = normal(&app);
+    for want in ["Contacts Favorites Repeaters All", "1 online - 1 offline - 2 total"] {
+        assert!(s.contains(want), "{want} missing in\n{s}");
+    }
+    assert!(screen(&app).contains("CONTACTS FAVORITES REPEATERS ALL"));
+    app.filter = Filter::All;
+    assert!(normal(&app).contains("1 online - 2 offline - 3 total"));
+    app.filter = crate::app::Filter::Repeaters;
+    assert!(normal(&app).contains("0 online - 1 offline - 1 total"));
+    app.filter = crate::app::Filter::Favorites;
+    let s = normal(&app);
+    assert!(s.contains("No favorites yet") && s.contains("0 total"), "{s}");
+}
+
+#[test]
+fn the_card_marks_a_favorite() {
+    let mut app = App::new("x", vec![]);
+    let mut ns = nodes(1);
+    ns[0].favorite = true;
+    app.apply(FromRadio::Nodes(ns));
+    app.tab = Tab::Contacts;
+    assert!(screen(&app).contains("FAV    YES"));
+}
+
+#[test]
+fn map_drops_the_erase_before_an_iterm2_image() {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    let mut picker = ratatui_image::picker::Picker::halfblocks();
+    picker.set_protocol_type(ratatui_image::picker::ProtocolType::Iterm2);
+    let img = image::RgbaImage::from_pixel(80, 80, image::Rgba([1, 2, 3, 255]));
+    let mut proto = picker.new_resize_protocol(image::DynamicImage::ImageRgba8(img));
+    let area = Rect::new(0, 0, 8, 4);
+    let mut buf = Buffer::empty(area);
+    ratatui::widgets::StatefulWidget::render(
+        ratatui_image::StatefulImage::default(),
+        area,
+        &mut buf,
+        &mut proto,
+    );
+    let before = buf[(0, 0)].symbol().to_string();
+    assert!(before.starts_with("\x1b[") && before.contains("X"), "the erase is there: {before:.40?}");
+    map_panel::drop_erase(&mut buf, area);
+    let after = buf[(0, 0)].symbol();
+    assert!(after.starts_with("\x1b]1337;File=inline=1"), "{after:.40?}");
+    assert!(before.ends_with(after), "the image itself is kept");
 }

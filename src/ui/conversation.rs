@@ -1,5 +1,5 @@
 //! ui/conversation.rs
-//! The conversation panel: the selected thread (wrapped and scrollable) and the input line.
+//! The conversation panel of the Chats tab: the open thread (wrapped and scrollable) and the input line.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
@@ -13,7 +13,7 @@ use ratatui::Frame;
 
 use super::format::{ascii_safe, hhmm};
 use super::{faint, panel, strong, text, Theme, CYAN};
-use crate::app::{App, Focus};
+use crate::app::App;
 use crate::history::Msg;
 use crate::radio::Link;
 
@@ -80,22 +80,14 @@ pub(super) fn thread_line<'a>(
     line
 }
 
-/// The selected conversation (anchored at its latest message) and the input line.
+/// The open conversation (anchored at its latest message) and the input line.
 pub(super) fn draw_conversation(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
-    let rows = app.rows();
-    let public = if theme == Theme::Normal {
-        "# Public"
+    let label = if app.chat == app.public_conv() && theme == Theme::Hacker {
+        "#PUBLIC".to_string()
     } else {
-        "#PUBLIC"
+        ascii_safe(&app.conv_label(&app.chat), app.ascii).into_owned()
     };
-    let label = rows.get(app.selected).map_or(String::new(), |r| {
-        if r.conv == app.public_conv() {
-            public.into()
-        } else {
-            ascii_safe(&r.label, app.ascii).into_owned()
-        }
-    });
-    let focused = app.focus == Focus::Input;
+    let focused = app.typing;
     let title = if theme == Theme::Normal {
         label
     } else {

@@ -11,6 +11,7 @@
 mod convert;
 mod meshtastic;
 mod link;
+mod pair;
 mod ping;
 mod session;
 mod task;
@@ -57,8 +58,13 @@ pub struct MyRadio {
     pub tx_power: u8,
     pub max_tx_power: u8,
     pub shares_position: bool,
+    /// Whether the GPS receiver is on; None when the radio has none or did not say.
+    pub gps: Option<bool>,
     /// Meshtastic region and modem preset ("EU_868 LONG_FAST"), when it uses one.
     pub preset: Option<String>,
+    /// MeshCore default region (flood scope). None: not read (Meshtastic, or a firmware older
+    /// than the region commands); Some(None): no region set.
+    pub region: Option<Option<String>>,
 }
 
 pub enum FromRadio {
@@ -80,6 +86,24 @@ pub enum FromRadio {
         prefix: String,
         ping: Ping,
     },
+    /// The radio took the advert, or did not (`error`).
+    Advert {
+        flood: bool,
+        error: Option<String>,
+    },
+    Pairing(Pairing),
+}
+
+/// Where a pairing stands.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pairing {
+    /// Looking for the radio, or waiting for its answer.
+    Running,
+    /// BlueZ asks for the PIN the radio named here shows on its screen.
+    Pin(String),
+    /// Paired with this radio, at this Unix time.
+    Paired(String, i64),
+    Failed(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -96,6 +120,14 @@ pub enum ToRadio {
         key: String,
         prefix: String,
     },
+    /// Advert of my radio: to the whole network (flood), or to the neighbours only (zero hop).
+    Advert {
+        flood: bool,
+    },
+    /// Remove the radio's bond and pair it again with the PIN it shows.
+    Pair,
+    /// The PIN typed for the pairing; None cancels it.
+    Pin(Option<u32>),
 }
 
 /// Outcome of a ping (status request).
@@ -129,6 +161,13 @@ impl ToRadio {
                     ping: Ping::Failed(error),
                 }
             }
+            ToRadio::Advert { flood } => {
+                return FromRadio::Advert {
+                    flood: *flood,
+                    error: Some(error),
+                }
+            }
+            ToRadio::Pair | ToRadio::Pin(_) => return FromRadio::Pairing(Pairing::Failed(error)),
         };
         FromRadio::SendFailed { conv, text, error }
     }
@@ -145,6 +184,18 @@ impl std::fmt::Display for HistoryWriteFailed {
 }
 
 impl std::error::Error for HistoryWriteFailed {}
+
+/// The user asked to pair the radio: the session ends so its bond can be removed.
+#[derive(Debug)]
+pub struct PairAsked;
+
+impl std::fmt::Display for PairAsked {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "pairing asked")
+    }
+}
+
+impl std::error::Error for PairAsked {}
 
 /// Shown while searching when no device name was given.
 pub const ANY_RADIO: &str = "a MeshCore or Meshtastic radio";
@@ -190,4 +241,7 @@ pub struct Node {
     pub path_len: i8,
     /// The route's relay hashes.
     pub path: Vec<u8>,
+    /// Marked as a favorite on the radio (MeshCore: bit 0 of the contact flags, the one
+    /// the MeshVox app sets; Meshtastic: the node database's favorite flag).
+    pub favorite: bool,
 }

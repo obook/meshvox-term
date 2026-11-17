@@ -19,14 +19,16 @@ use meshtastic::protobufs::{
 use prost::Message;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use super::convert::{ack_for, ack_tag, battery, my_radio, node, node_num, text_msg, trace};
+use super::convert::{
+    ack_for, ack_tag, battery, gps_on, my_radio, node, node_num, text_msg, trace,
+};
 use super::transport::Transport;
 use crate::config::{CHECK_EVERY, CONTACTS_TIMEOUT, PING_TIMEOUT};
 use crate::geo::pos_from_e7;
 use crate::history::{Msg, Record, MT_PUBLIC};
 use crate::radio::link::now;
 use crate::radio::session::{announce, save};
-use crate::radio::{Firmware, FromRadio, HistoryWriteFailed, Ping, ToRadio};
+use crate::radio::{Firmware, FromRadio, HistoryWriteFailed, PairAsked, Ping, ToRadio};
 
 /// Direct messages remembered while waiting for an ack.
 const MAX_UNACKED: usize = 1000;
@@ -427,6 +429,8 @@ impl Live {
                 self.traces.insert(id, (prefix.clone(), Instant::now()));
                 Ok(())
             }
+            ToRadio::Advert { .. } => anyhow::bail!("adverts are MeshCore only"),
+            ToRadio::Pair | ToRadio::Pin(_) => Ok(()), // the session ends first; Pin only while pairing
         }
     }
 
@@ -471,7 +475,8 @@ pub(in crate::radio) async fn session(
     let my_pos = me
         .and_then(|m| m.position.as_ref())
         .and_then(|p| pos_from_e7(p.latitude_i?, p.longitude_i?));
-    let radio = my_radio(snap.my_num, me, snap.meta.as_ref(), snap.lora.as_ref());
+    let mut radio = my_radio(snap.my_num, me, snap.meta.as_ref(), snap.lora.as_ref());
+    radio.gps = snap.gps.and_then(gps_on);
     announce(tx, Firmware::Meshtastic, radio, my_pos, name);
     if let Some(b) = me.and_then(|m| m.device_metrics.as_ref()).and_then(battery) {
         let _ = tx.send(FromRadio::Battery(b));
@@ -526,6 +531,9 @@ pub(in crate::radio) async fn session(
             }
             cmd = cmds.recv() => {
                 let Some(cmd) = cmd else { return Ok(false) };
+                if cmd == ToRadio::Pair {
+                    return Err(PairAsked.into());
+                }
                 if let Err(e) = live.command(t, &mut ids, &cmd, history, tx).await {
                     // Sent but not saved: the message is shown, do not invite a resend.
                     if e.is::<HistoryWriteFailed>() {

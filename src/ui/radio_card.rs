@@ -1,5 +1,6 @@
 //! ui/radio_card.rs
-//! The card of my own radio: model, firmware, battery, radio settings, position and link.
+//! The card of my own radio: model, firmware, battery, radio settings, position and link;
+//! and the pairing, with or without a radio.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
@@ -8,10 +9,10 @@
 use ratatui::text::Line;
 
 use super::card::field;
-use super::format::{coord, khz, uptime, LOW_BATTERY};
+use super::format::{coord, hhmm, khz, uptime, LOW_BATTERY};
 use super::{alert, faint, text, Theme};
 use crate::app::App;
-use crate::radio::{Link, MyRadio};
+use crate::radio::{Link, MyRadio, Pairing};
 
 /// What my radio says about itself, its battery and the link.
 pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<Line<'a>> {
@@ -77,21 +78,37 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         format!("{} dBm{max}", radio.tx_power),
         text(theme),
     ));
+    // Shown as MeshVox does: no line when the firmware does not know regions.
+    match &radio.region {
+        Some(Some(name)) => lines.push(field(theme, "REGION", name.clone(), text(theme))),
+        Some(None) => lines.push(field(theme, "REGION", "NONE".into(), faint(theme))),
+        None => {}
+    }
     lines.push(match app.self_pos {
         Some(p) => field(theme, "POS", coord(p.lat, p.lon), text(theme)),
         None => field(theme, "POS", "UNKNOWN".into(), faint(theme)),
     });
-    // Whether my adverts carry the position.
+    // Whether my adverts carry the position, as MeshVox's "Position in adverts".
     lines.push(field(
         theme,
-        "GPS",
+        "ADVERT",
         if radio.shares_position {
-            "SHARED".into()
+            "POSITION SHARED".into()
         } else {
-            "HIDDEN".into()
+            "POSITION HIDDEN".into()
         },
         text(theme),
     ));
+    if let Some((flood, ts)) = app.advert {
+        let to = if flood { "ALL" } else { "NEIGHBOURS" };
+        lines.push(field(theme, "SENT", format!("TO {to} {}", hhmm(ts)), text(theme)));
+    }
+    // Whether the GPS receiver looks for satellites.
+    lines.push(match radio.gps {
+        Some(true) => field(theme, "GPS", "ON".into(), text(theme)),
+        Some(false) => field(theme, "GPS", "OFF".into(), text(theme)),
+        None => field(theme, "GPS", "-".into(), faint(theme)),
+    });
     // shortcut: the maximum is not shown; meshcore-rs 0.2.0 caps the firmware's value at 255.
     lines.push(field(
         theme,
@@ -109,4 +126,31 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         _ => field(theme, "LINK", "DOWN".into(), alert(theme)),
     });
     lines
+}
+
+/// Where the pairing stands. When it asks for the PIN: what to type, where to read it and
+/// what is typed so far, in the alert color, to catch the eye.
+pub(super) fn pairing_lines<'a>(app: &App, theme: Theme) -> Vec<Line<'a>> {
+    match &app.pairing {
+        Some(Pairing::Running) => vec![field(theme, "PAIR", "IN PROGRESS...".into(), text(theme))],
+        Some(Pairing::Pin(name)) => {
+            let ask = match theme {
+                Theme::Normal => format!("Type the PIN shown on the screen of {name}"),
+                Theme::Hacker => format!("ENTER PIN FROM {name} SCREEN"),
+            };
+            vec![
+                Line::default(),
+                field(theme, "PIN", ask, alert(theme)),
+                field(theme, "", format!("> {}_", app.pin), alert(theme)),
+                field(theme, "", "Enter: pair   Esc: cancel".into(), faint(theme)),
+            ]
+        }
+        Some(Pairing::Paired(name, ts)) => vec![field(
+            theme,
+            "PAIR",
+            format!("PAIRED {name} {}", hhmm(*ts)),
+            text(theme),
+        )],
+        Some(Pairing::Failed(_)) | None => vec![], // a failure is in the notice
+    }
 }
