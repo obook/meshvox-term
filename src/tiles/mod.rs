@@ -66,7 +66,8 @@ impl Source {
     pub fn credit(self) -> &'static str {
         match self {
             Source::Osm => " (c) OpenStreetMap contributors ",
-            Source::Ign => " (c) IGN (c) OpenStreetMap contributors ",
+            // Short: the panel can be narrow, and both credits must show.
+            Source::Ign => " (c) IGN (c) OSM ",
         }
     }
 }

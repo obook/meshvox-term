@@ -403,5 +403,5 @@ fn ign_tiles_fall_back_to_osm() {
     );
     assert_eq!(Source::Osm.urls(bordeaux), ["https://tile.openstreetmap.org/12/2041/1475.png"]);
     assert_ne!(Source::Ign.dir(), Source::Osm.dir(), "a cache per source");
-    assert!(Source::Ign.credit().contains("IGN") && Source::Ign.credit().contains("OpenStreetMap"));
+    assert_eq!(Source::Ign.credit(), " (c) IGN (c) OSM ");
 }
