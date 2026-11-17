@@ -10,7 +10,7 @@ use super::menu::*;
 use super::*;
 use crate::app::{Filter, Tab};
 use crate::history::{Msg, Record};
-use crate::radio::{Battery, Firmware, FromRadio, Link, MyRadio, Node, NodeKind};
+use crate::radio::{Battery, Firmware, FromRadio, Link, MyRadio, Node, NodeKind, Pairing};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn render(draw_fn: impl FnOnce(&mut Frame)) -> String {
@@ -392,6 +392,14 @@ fn device_tab_shows_my_radio_or_waits_for_it() {
     let mut app = App::new("x", vec![]);
     app.tab = Tab::Device;
     assert!(normal(&app).contains("No radio connected yet"));
+    // The pairing shows without a radio too.
+    app.apply(FromRadio::Pairing(Pairing::Pin("MeshCore-bbok".into())));
+    app.pin = "123".into();
+    let s = normal(&app);
+    assert!(s.contains("PIN    Type the PIN shown on the screen of MeshCore-bbok"), "{s}");
+    assert!(s.contains("       > 123_") && s.contains("Esc: cancel"), "{s}");
+    app.apply(FromRadio::Pairing(Pairing::Paired("MeshCore-bbok".into(), 0)));
+    assert!(normal(&app).contains("PAIR   PAIRED MeshCore-bbok"));
 }
 
 #[test]

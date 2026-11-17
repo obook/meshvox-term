@@ -11,7 +11,7 @@ use crate::config::FIT_RADIUS_KM;
 use crate::geo::{distance_km, Pos};
 use crate::history::Record;
 use crate::map::MapView;
-use crate::radio::{FromRadio, Link};
+use crate::radio::{FromRadio, Link, Pairing};
 
 impl App {
     pub fn apply(&mut self, update: FromRadio) {
@@ -53,6 +53,19 @@ impl App {
             }
             FromRadio::Pong { prefix, ping } => {
                 self.pings.insert(prefix, ping);
+            }
+            FromRadio::Pairing(Pairing::Failed(error)) => {
+                self.pairing = None;
+                self.notice = Some(format!("Pairing failed: {error}"));
+            }
+            FromRadio::Pairing(state) => {
+                if let Pairing::Pin(_) = state {
+                    // The PIN is typed in the Device tab, whatever was open.
+                    self.pin.clear();
+                    self.typing = false;
+                    self.tab = Tab::Device;
+                }
+                self.pairing = Some(state);
             }
             FromRadio::Advert { flood, error: None } => {
                 self.advert = Some((flood, chrono::Utc::now().timestamp()))

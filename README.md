@@ -27,9 +27,12 @@ The program is `target/release/meshvox-term`.
 
 ## Pair the radio
 
-Pair once from `bluetoothctl`, under either firmware. The radio wants a
-bond made with its PIN; pairing from the KDE Bluetooth settings leaves a
-bond the radio drops a few seconds after each connection.
+The radio wants a bond made with its PIN; pairing from the KDE Bluetooth
+settings leaves a bond the radio drops a few seconds after each connection.
+Pair from meshvox-term instead: in the Device tab, press `p`, then type the
+PIN shown on the radio's screen (the M5 picks a new one at each boot). It
+removes the old bond first, and does it on its own once when a Meshtastic
+radio's bond is stale. Or pair once from `bluetoothctl`:
 
 ```
 bluetoothctl
@@ -39,12 +42,10 @@ scan on
 pair AA:BB:CC:DD:EE:FF
 ```
 
-Put your radio's address in the last line, then type the PIN shown on the
-radio's screen (the M5 picks a new one at each boot). Or let
+Put your radio's address in the last line, then type the PIN. Or let
 `scripts/pair-radio.py` do it all: it finds the radio, removes an old
 pairing and asks for the PIN when bluetoothctl needs it. After switching the
-radio to the other firmware, run `remove` with its address first and pair
-again: the old bond no longer works. To check the link:
+radio to the other firmware, pair again: the old bond no longer works. To check the link:
 
 ```
 meshvox-term --probe
@@ -116,6 +117,8 @@ Keys:
   node (Map)
 - `p`: ping the selected node (MeshCore repeater or room), or trace the
   route to it (Meshtastic), from the Contacts and Map tabs
+- `p` in the Device tab: pair the radio again; type its PIN, then Enter
+  (Esc cancels)
 - `q` or Ctrl+C: quit
 
 Outside the input line only, the digits switch tabs and `q` quits.

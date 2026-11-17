@@ -36,7 +36,7 @@ use map_panel::draw_map;
 pub use map_panel::MapState;
 pub use menu::{draw_boot, draw_menu, menu_key, Menu, BOOT};
 use panels::{draw_footer, draw_header};
-use radio_card::radio_lines;
+use radio_card::{pairing_lines, radio_lines};
 
 const GREEN: Color = Color::Rgb(0, 255, 65);
 const DIM: Color = Color::Rgb(0, 140, 40);
@@ -176,7 +176,7 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
 
 /// The Device tab: my radio's card, or why there is none yet.
 fn draw_device(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
-    let (title, lines) = match &app.me {
+    let (title, mut lines) = match &app.me {
         Some(radio) => (
             match theme {
                 Theme::Normal => format!("My radio: {}", format::ascii_safe(&radio.name, app.ascii)),
@@ -192,6 +192,7 @@ fn draw_device(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
             vec![Line::styled("No radio connected yet", faint(theme))],
         ),
     };
+    lines.extend(pairing_lines(app, theme));
     frame.render_widget(
         Paragraph::new(lines)
             .style(text(theme))

@@ -11,6 +11,7 @@
 mod convert;
 mod meshtastic;
 mod link;
+mod pair;
 mod ping;
 mod session;
 mod task;
@@ -90,6 +91,19 @@ pub enum FromRadio {
         flood: bool,
         error: Option<String>,
     },
+    Pairing(Pairing),
+}
+
+/// Where a pairing stands.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Pairing {
+    /// Looking for the radio, or waiting for its answer.
+    Running,
+    /// BlueZ asks for the PIN the radio named here shows on its screen.
+    Pin(String),
+    /// Paired with this radio, at this Unix time.
+    Paired(String, i64),
+    Failed(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -110,6 +124,10 @@ pub enum ToRadio {
     Advert {
         flood: bool,
     },
+    /// Remove the radio's bond and pair it again with the PIN it shows.
+    Pair,
+    /// The PIN typed for the pairing; None cancels it.
+    Pin(Option<u32>),
 }
 
 /// Outcome of a ping (status request).
@@ -149,6 +167,7 @@ impl ToRadio {
                     error: Some(error),
                 }
             }
+            ToRadio::Pair | ToRadio::Pin(_) => return FromRadio::Pairing(Pairing::Failed(error)),
         };
         FromRadio::SendFailed { conv, text, error }
     }
@@ -165,6 +184,18 @@ impl std::fmt::Display for HistoryWriteFailed {
 }
 
 impl std::error::Error for HistoryWriteFailed {}
+
+/// The user asked to pair the radio: the session ends so its bond can be removed.
+#[derive(Debug)]
+pub struct PairAsked;
+
+impl std::fmt::Display for PairAsked {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "pairing asked")
+    }
+}
+
+impl std::error::Error for PairAsked {}
 
 /// Shown while searching when no device name was given.
 pub const ANY_RADIO: &str = "a MeshCore or Meshtastic radio";

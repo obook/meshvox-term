@@ -13,7 +13,7 @@ use ratatui::Frame;
 use super::format::{gauge, spinner, LOW_BATTERY};
 use super::{alert, faint, panel, strong, text, Theme};
 use crate::app::{App, Tab};
-use crate::radio::{Firmware, Link};
+use crate::radio::{Firmware, Link, Pairing};
 
 /// The banner: link state, battery and node count, or the current notice.
 pub(super) fn draw_header(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
@@ -129,13 +129,19 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             ("[ ]", "node", "NODE"),
             ("p", "ping", "PING"),
         ],
+        (Tab::Device, _) if matches!(app.pairing, Some(Pairing::Pin(_))) => vec![
+            ("0-9", "PIN", "PIN"),
+            ("Enter", "pair", "BOND"),
+            ("Esc", "cancel", "ABORT"),
+        ],
         (Tab::Device, _) if app.firmware == Firmware::MeshCore => vec![
             ("a", "advert to neighbours", "ADVERT ZERO-HOP"),
             ("f", "advert to all", "ADVERT FLOOD"),
+            ("p", "pair", "PAIR"),
         ],
-        (Tab::Device, _) => vec![],
+        (Tab::Device, _) => vec![("p", "pair", "PAIR")],
     };
-    if !app.typing {
+    if !app.typing && !matches!(app.pairing, Some(Pairing::Pin(_))) {
         keys.extend([("1-4", "tabs", "TABS"), ("q", "quit", "EXIT")]);
     }
     keys

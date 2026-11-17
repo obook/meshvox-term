@@ -19,7 +19,7 @@ use crate::geo::{distance_km, format_distance, Pos};
 use crate::history::{is_meshtastic, Msg, Record, MT_PUBLIC, PUBLIC};
 use crate::map::MapView;
 pub use crate::radio::Ping;
-use crate::radio::{Battery, Firmware, Link, MyRadio, Node, NodeKind};
+use crate::radio::{Battery, Firmware, Link, MyRadio, Node, NodeKind, Pairing};
 
 /// Conversation key of the row for my own radio.
 pub const MY_RADIO: &str = "radio";
@@ -88,6 +88,10 @@ pub struct App {
     pub pings: HashMap<String, Ping>,
     /// The last advert my radio took this session: to the whole network or not, and when.
     pub advert: Option<(bool, i64)>,
+    /// The pairing of a radio (key p in the Device tab), until it fails.
+    pub pairing: Option<Pairing>,
+    /// The PIN typed while the pairing asks for it.
+    pub pin: String,
     pub unread: HashMap<String, usize>,
     pub tab: Tab,
     /// Key of the conversation open in the Chats tab.
@@ -136,6 +140,8 @@ impl App {
             acked: HashSet::new(),
             pings: HashMap::new(),
             advert: None,
+            pairing: None,
+            pin: String::new(),
             unread: HashMap::new(),
             tab: Tab::Chats,
             chat: PUBLIC.into(),
