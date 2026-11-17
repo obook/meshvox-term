@@ -128,6 +128,7 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             ("+/-", "zoom", "ZOOM"),
             ("[ ]", "node", "NODE"),
             ("p", "ping", "PING"),
+            ("s", "", "SWEEP"), // Hacker look only
         ],
         (Tab::Device, _) if matches!(app.pairing, Some(Pairing::Pin(_))) => vec![
             ("0-9", "PIN", "PIN"),
@@ -151,6 +152,7 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
 pub(super) fn draw_footer(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
     let spans: Vec<Span> = keys(app)
         .into_iter()
+        .filter(|(_, normal, _)| theme == Theme::Hacker || !normal.is_empty())
         .flat_map(|(k, normal, hacker)| match theme {
             Theme::Normal => [
                 Span::styled(

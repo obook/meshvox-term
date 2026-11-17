@@ -51,6 +51,7 @@ impl App {
             (Tab::Map, KeyCode::Right) => self.move_map(|v| v.pan(1, 0)),
             (Tab::Map, KeyCode::Up) => self.move_map(|v| v.pan(0, 1)),
             (Tab::Map, KeyCode::Down) => self.move_map(|v| v.pan(0, -1)),
+            (Tab::Map, KeyCode::Char('s')) => self.sweep = !self.sweep,
             (Tab::Device, KeyCode::Char('a')) => return self.advert(false),
             (Tab::Device, KeyCode::Char('f')) => return self.advert(true),
             (Tab::Device, KeyCode::Char('p')) => return self.pair(),

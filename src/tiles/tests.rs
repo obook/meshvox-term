@@ -376,3 +376,15 @@ fn a_mark_near_the_edge_does_not_panic() {
         Look::Night,
     );
 }
+
+#[test]
+fn the_sweep_lights_behind_its_beam_only() {
+    let dark = Rgba([0, 8, 2, 255]);
+    let mut img = RgbaImage::from_pixel(200, 200, dark);
+    // Step 15 of 60: the beam points east, so north east is in its afterglow.
+    sweep(&mut img, (100.0, 100.0), 15);
+    assert!(img.get_pixel(190, 100)[1] > 150, "on the beam");
+    assert!(img.get_pixel(160, 50)[1] > 8, "afterglow behind it");
+    assert_eq!(*img.get_pixel(100, 190), dark, "not yet swept");
+    assert_eq!(*img.get_pixel(40, 100), dark);
+}

@@ -19,13 +19,17 @@ use super::radar::{draw_radar, radar_px, scale};
 use super::{faint, panel, Theme};
 use crate::app::App;
 use crate::map::{MapView, Pos};
-use crate::tiles::{compose, Icon, Look, Mark, Tiles};
+use crate::tiles::{compose, sweep, Icon, Look, Mark, Tiles, SWEEP_STEPS};
 
 /// What the map image needs between frames: it is rebuilt only when something on it changes.
 pub struct MapState {
     picker: Picker,
     tiles: Tiles,
     shown: Option<Shown>,
+    /// The map as last composed, without the sweep.
+    base: Option<image::RgbaImage>,
+    /// The sweep position shown; None when it is off.
+    sweep_at: Option<u32>,
     image: Option<StatefulProtocol>,
     /// The map's size in pixels at the last drawing.
     size_px: Option<(u32, u32)>,
@@ -47,6 +51,8 @@ impl MapState {
             picker,
             tiles,
             shown: None,
+            base: None,
+            sweep_at: None,
             image: None,
             size_px: None,
         }
@@ -121,6 +127,10 @@ pub(super) fn draw_map(frame: &mut Frame, app: &App, area: Rect, map: &mut MapSt
         })
         .collect();
     marks.extend(app.self_pos.map(|p| (p, Mark::Me)));
+    // The sweep turns around my radio, or the middle of the map before its position is known.
+    let center = app.self_pos.map_or((f64::from(w) / 2.0, f64::from(h) / 2.0), |p| {
+        app.view.screen_px(p, w, h)
+    });
     let shown = Shown {
         view: app.view,
         w,
@@ -128,13 +138,24 @@ pub(super) fn draw_map(frame: &mut Frame, app: &App, area: Rect, map: &mut MapSt
         marks,
         look,
     };
-    if map.tiles.poll() || map.shown.as_ref() != Some(&shown) {
-        let img = compose(&shown.view, w, h, &mut map.tiles, &shown.marks, look);
+    let rebuilt = map.tiles.poll() || map.shown.as_ref() != Some(&shown);
+    if rebuilt {
+        map.base = Some(compose(&shown.view, w, h, &mut map.tiles, &shown.marks, look));
+        map.shown = Some(shown);
+    }
+    // One turn in 6 s, a step every 100 ms: the main loop draws at that pace.
+    let step = (chrono::Utc::now().timestamp_millis() / 100) as u32 % SWEEP_STEPS;
+    let sweep_at = (app.sweep && look == Look::Night).then_some(step);
+    if let (true, Some(base)) = (rebuilt || sweep_at != map.sweep_at, &map.base) {
+        let mut img = base.clone();
+        if let Some(step) = sweep_at {
+            sweep(&mut img, center, step);
+        }
         map.image = Some(
             map.picker
                 .new_resize_protocol(DynamicImage::ImageRgba8(img)),
         );
-        map.shown = Some(shown);
+        map.sweep_at = sweep_at;
     }
     if let Some(image) = &mut map.image {
         frame.render_stateful_widget(StatefulImage::default(), inner, image);

@@ -671,6 +671,16 @@ fn esc_cancels_the_pin() {
     assert_eq!(press(&mut app, KeyCode::Esc), Some(ToRadio::Pin(None)));
 }
 
+#[test]
+fn s_turns_the_radar_sweep_on_and_off() {
+    let mut app = App::new("x", vec![]);
+    app.tab = Tab::Map;
+    press(&mut app, KeyCode::Char('s'));
+    assert!(app.sweep);
+    press(&mut app, KeyCode::Char('s'));
+    assert!(!app.sweep);
+}
+
 fn my_radio() -> MyRadio {
     MyRadio {
         prefix: "abcdef012345".into(),

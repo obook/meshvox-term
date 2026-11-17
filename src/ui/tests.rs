@@ -320,6 +320,13 @@ fn card_shows_a_repeater() {
 }
 
 #[test]
+fn the_sweep_key_shows_in_the_hacker_look_only() {
+    let app = relay_app();
+    assert!(screen(&app).contains("[S] SWEEP"));
+    assert!(!normal(&app).contains(" s "), "{}", normal(&app));
+}
+
+#[test]
 fn card_shows_the_ping_result() {
     let mut app = relay_app();
     let pong = crate::app::Ping::Pong {

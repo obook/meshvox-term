@@ -119,6 +119,7 @@ Keys:
   route to it (Meshtastic), from the Contacts and Map tabs
 - `p` in the Device tab: pair the radio again; type its PIN, then Enter
   (Esc cancels)
+- `s` in the Map tab, Hacker look: turn the radar sweep on or off
 - `q` or Ctrl+C: quit
 
 Outside the input line only, the digits switch tabs and `q` quits.

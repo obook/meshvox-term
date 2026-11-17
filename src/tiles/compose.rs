@@ -235,6 +235,42 @@ const LEADER_PX: i64 = 22;
 /// Longer names are cut on the map; the card has them whole.
 const LABEL_CHARS: usize = 16;
 
+/// The radar sweep: one turn in SWEEP_STEPS positions.
+pub const SWEEP_STEPS: u32 = 60;
+/// How far behind the beam the afterglow reaches, in radians (60 degrees).
+const AFTERGLOW: f64 = std::f64::consts::PI / 3.0;
+/// The phosphor green of the beam and its afterglow.
+const GLOW: [f64; 3] = [60.0, 255.0, 120.0];
+
+/// The radar sweep at `step`, turning clockwise from north around `center`: a bright beam
+/// and the afterglow of the phosphor fading behind it. Fake: it shows nothing real.
+pub fn sweep(img: &mut RgbaImage, center: (f64, f64), step: u32) {
+    use std::f64::consts::TAU;
+    let beam = f64::from(step % SWEEP_STEPS) * TAU / f64::from(SWEEP_STEPS);
+    // Directions clockwise from north, y pointing down: the beam and the end of the afterglow.
+    let dir = |a: f64| (a.sin(), -a.cos());
+    // A hair ahead of the beam (here and below), so rounding does not drop the pixels on it.
+    let (b, t) = (dir(beam + 0.01), dir(beam - AFTERGLOW));
+    for (x, y, p) in img.enumerate_pixels_mut() {
+        let (dx, dy) = (f64::from(x) - center.0, f64::from(y) - center.1);
+        // Cheap test first: only pixels between the two directions need an angle.
+        if t.0 * dy - t.1 * dx < 0.0 || dx * b.1 - dy * b.0 < 0.0 {
+            continue;
+        }
+        // Clockwise from north; then how far the beam has gone past this pixel.
+        let angle = dx.atan2(-dy).rem_euclid(TAU);
+        let behind = (beam + 0.01 - angle).rem_euclid(TAU) - 0.01;
+        let glow = match behind {
+            b if b < 0.03 => 0.8,
+            b if b < AFTERGLOW => 0.45 * (1.0 - b / AFTERGLOW),
+            _ => continue,
+        };
+        for i in 0..3 {
+            p[i] = (f64::from(p[i]) + (GLOW[i] - f64::from(p[i])) * glow) as u8;
+        }
+    }
+}
+
 /// A box on the image: left, top, right, bottom.
 type Area = (i64, i64, i64, i64);
 

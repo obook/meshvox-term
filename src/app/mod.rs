@@ -88,6 +88,8 @@ pub struct App {
     pub pings: HashMap<String, Ping>,
     /// The last advert my radio took this session: to the whole network or not, and when.
     pub advert: Option<(bool, i64)>,
+    /// The radar sweep turns on the Hacker map (key s).
+    pub sweep: bool,
     /// The pairing of a radio (key p in the Device tab), until it fails.
     pub pairing: Option<Pairing>,
     /// The PIN typed while the pairing asks for it.
@@ -140,6 +142,7 @@ impl App {
             acked: HashSet::new(),
             pings: HashMap::new(),
             advert: None,
+            sweep: false,
             pairing: None,
             pin: String::new(),
             unread: HashMap::new(),
