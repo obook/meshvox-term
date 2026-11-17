@@ -388,3 +388,20 @@ fn the_sweep_lights_behind_its_beam_only() {
     assert_eq!(*img.get_pixel(100, 190), dark, "not yet swept");
     assert_eq!(*img.get_pixel(40, 100), dark);
 }
+
+#[test]
+fn ign_tiles_fall_back_to_osm() {
+    let bordeaux = (12, 2041, 1475);
+    assert_eq!(
+        Source::Ign.urls(bordeaux),
+        [
+            "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0\
+&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/png\
+&TILEMATRIX=12&TILEROW=1475&TILECOL=2041",
+            "https://tile.openstreetmap.org/12/2041/1475.png",
+        ]
+    );
+    assert_eq!(Source::Osm.urls(bordeaux), ["https://tile.openstreetmap.org/12/2041/1475.png"]);
+    assert_ne!(Source::Ign.dir(), Source::Osm.dir(), "a cache per source");
+    assert!(Source::Ign.credit().contains("IGN") && Source::Ign.credit().contains("OpenStreetMap"));
+}

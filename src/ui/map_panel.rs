@@ -83,7 +83,7 @@ pub(super) fn draw_map(frame: &mut Frame, app: &App, area: Rect, map: &mut MapSt
     let bottom = if app.ascii {
         format!(" {} ", scale(app))
     } else {
-        " (c) OpenStreetMap contributors ".to_string()
+        map.tiles.source.credit().to_string()
     };
     let block = panel(theme, app.ascii, true, &title)
         .title_bottom(Line::styled(bottom, faint(theme)).right_aligned());
