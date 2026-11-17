@@ -47,3 +47,11 @@ tempfile = "3"
 # in src/reader.rs, the custom variables read in the firmware's "name:value,..." form.
 [patch.crates-io]
 meshcore-rs = { path = "vendor/meshcore-rs" }
+
+# cargo run stays usable: the map's PNG encoding and image work are 50 times slower
+# unoptimized, and froze the app at each zoom.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
