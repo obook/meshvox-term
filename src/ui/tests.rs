@@ -432,7 +432,9 @@ fn card_helpers() {
 #[test]
 fn normal_banner_is_plain_english() {
     let mut app = App::new("MeshCore-bbok", vec![]);
-    assert!(normal(&app).contains("Searching for MeshCore-bbok... (is a phone connected to it?)"));
+    let s = normal(&app);
+    let spins = ['|', '/', '-', '\\'].iter().any(|c| s.contains(&format!("Searching for MeshCore-bbok {c} (is a phone")));
+    assert!(spins, "a turning bar while searching: {s}");
     app.apply(FromRadio::Link(Link::Connected("MeshCore-bbok".into())));
     app.apply(FromRadio::Battery(Battery {
         pct: 87,

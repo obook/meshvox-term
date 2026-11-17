@@ -43,7 +43,7 @@ pub(super) fn draw_header(frame: &mut Frame, app: &App, area: Rect, theme: Theme
             )
         }
         (Theme::Normal, None, Link::Searching(name)) => Span::styled(
-            format!("Searching for {name}... (is a phone connected to it?)"),
+            format!("Searching for {name} {} (is a phone connected to it?)", spinner()),
             Style::new().fg(Color::Yellow),
         ),
         (Theme::Normal, None, Link::Lost(reason)) => Span::styled(
