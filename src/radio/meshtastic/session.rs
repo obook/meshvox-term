@@ -429,6 +429,7 @@ impl Live {
                 self.traces.insert(id, (prefix.clone(), Instant::now()));
                 Ok(())
             }
+            ToRadio::Advert { .. } => anyhow::bail!("adverts are MeshCore only"),
         }
     }
 

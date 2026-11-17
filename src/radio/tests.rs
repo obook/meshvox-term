@@ -316,6 +316,18 @@ fn bit_0_of_the_flags_is_the_favorite() {
 }
 
 #[test]
+fn the_region_frame_gives_the_name_or_none() {
+    use super::convert::region_from_frame;
+    let mut frame = vec![28];
+    frame.extend(b"fr-33");
+    frame.resize(1 + 31 + 16, 0);
+    assert_eq!(region_from_frame(&frame), Some(Some("fr-33".into())));
+    assert_eq!(region_from_frame(&[28]), Some(None), "no region set");
+    assert_eq!(region_from_frame(&[1, 2, 3]), None, "another frame");
+    assert_eq!(region_from_frame(&[]), None);
+}
+
+#[test]
 fn the_gps_variable_says_on_or_off() {
     use super::convert::gps_from_vars;
     let vars = |pairs: &[(&str, &str)]| {

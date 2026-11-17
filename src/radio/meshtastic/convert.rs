@@ -150,6 +150,7 @@ pub fn my_radio(
             let preset = ModemPreset::try_from(l.modem_preset).map_or("?", |p| p.as_str_name());
             format!("{region} {preset}")
         }),
+        region: None,
     }
 }
 

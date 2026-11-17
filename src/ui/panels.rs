@@ -13,7 +13,7 @@ use ratatui::Frame;
 use super::format::{gauge, spinner, LOW_BATTERY};
 use super::{alert, faint, panel, strong, text, Theme};
 use crate::app::{App, Tab};
-use crate::radio::Link;
+use crate::radio::{Firmware, Link};
 
 /// The banner: link state, battery and node count, or the current notice.
 pub(super) fn draw_header(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
@@ -128,6 +128,10 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             ("+/-", "zoom", "ZOOM"),
             ("[ ]", "node", "NODE"),
             ("p", "ping", "PING"),
+        ],
+        (Tab::Device, _) if app.firmware == Firmware::MeshCore => vec![
+            ("a", "advert to neighbours", "ADVERT ZERO-HOP"),
+            ("f", "advert to all", "ADVERT FLOOD"),
         ],
         (Tab::Device, _) => vec![],
     };
