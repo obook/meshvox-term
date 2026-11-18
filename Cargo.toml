@@ -16,6 +16,8 @@ bluer = { version = "0.17", features = ["bluetoothd"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
+# Smooth text for the Normal map's labels (DejaVu Sans, bundled in assets/fonts).
+ab_glyph = "0.2"
 # Map tiles: PNG decoding and composing.
 image = { version = "0.25", default-features = false, features = ["png"] }
 meshcore-rs = { version = "0.2.0", default-features = false, features = ["ble"] }

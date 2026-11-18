@@ -155,6 +155,30 @@ fn plain_person_icon_is_a_name_colored_disc_with_initials() {
 }
 
 #[test]
+fn plain_nodes_get_their_name_up_right() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut tiles = Tiles::offline(dir.path().into());
+    let center = Pos { lat: 0.0, lon: 0.0 };
+    let img = compose(
+        &world_z1(),
+        512,
+        512,
+        &mut tiles,
+        &[(center, Mark::Node(icon()))],
+        Look::Plain,
+    );
+    // Light text, smoothed, in the box up right of the icon, beyond its corner.
+    let light = (256 + 22..256 + 22 + 140)
+        .flat_map(|x| (256 - 22 - 20..256 - 22).map(move |y| (x, y)))
+        .filter(|&(x, y)| img.get_pixel(x, y).0[..3].iter().all(|&v| v > 180))
+        .count();
+    assert!(light > 20, "label drawn: {light} light pixels");
+    if let Some(out) = std::env::var_os("MAP_LABEL_PNG") {
+        img.save(out).unwrap();
+    }
+}
+
+#[test]
 fn the_selected_node_gets_a_pin_in_both_looks() {
     let dir = tempfile::tempdir().unwrap();
     let mut tiles = Tiles::offline(dir.path().into());
