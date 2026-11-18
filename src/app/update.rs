@@ -73,6 +73,7 @@ impl App {
             FromRadio::Advert {
                 error: Some(error), ..
             } => self.notice = Some(format!("Advert failed: {error}")),
+            FromRadio::RebootFailed(error) => self.notice = Some(format!("Reboot failed: {error}")),
             FromRadio::SendFailed {
                 conv: failed,
                 text,

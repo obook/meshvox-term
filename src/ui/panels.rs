@@ -139,6 +139,7 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             ("a", "advert to neighbours", "ADVERT ZERO-HOP"),
             ("f", "advert to all", "ADVERT FLOOD"),
             ("p", "pair", "PAIR"),
+            ("r", "reboot", "REBOOT"),
         ],
         (Tab::Device, _) => vec![("p", "pair", "PAIR")],
     };

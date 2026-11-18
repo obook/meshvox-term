@@ -55,6 +55,7 @@ impl App {
             (Tab::Device, KeyCode::Char('a')) => return self.advert(false),
             (Tab::Device, KeyCode::Char('f')) => return self.advert(true),
             (Tab::Device, KeyCode::Char('p')) => return self.pair(),
+            (Tab::Device, KeyCode::Char('r')) => return self.reboot(),
             _ => {}
         }
         None
@@ -239,6 +240,19 @@ impl App {
             return None;
         }
         Some(ToRadio::Advert { flood })
+    }
+
+    fn reboot(&mut self) -> Option<ToRadio> {
+        if !matches!(self.link, Link::Connected(_)) {
+            self.notice = Some("Not connected, radio not rebooted".into());
+            return None;
+        }
+        if self.firmware != Firmware::MeshCore {
+            self.notice = Some("Reboot is MeshCore only".into());
+            return None;
+        }
+        self.notice = Some("Rebooting the radio".into());
+        Some(ToRadio::Reboot)
     }
 
     /// My own radio, by its row or by its id (an old conversation can carry it).

@@ -253,6 +253,11 @@ pub(super) async fn send(
         }
         // Ping: handled by ping(); Pair: ends the session; Pin: only while pairing.
         ToRadio::Ping { .. } | ToRadio::Pair | ToRadio::Pin(_) => return Ok(()),
+        ToRadio::Reboot => {
+            // No reply: the link drops and the task reconnects.
+            radio.commands().lock().await.reboot().await?;
+            return Ok(());
+        }
         ToRadio::Advert { flood } => {
             radio.commands().lock().await.send_advert(*flood).await?;
             let _ = tx.send(FromRadio::Advert {

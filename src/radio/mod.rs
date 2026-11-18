@@ -92,6 +92,8 @@ pub enum FromRadio {
         error: Option<String>,
     },
     Pairing(Pairing),
+    /// The reboot command could not be sent.
+    RebootFailed(String),
 }
 
 /// Where a pairing stands.
@@ -124,6 +126,8 @@ pub enum ToRadio {
     Advert {
         flood: bool,
     },
+    /// Reboot my radio (MeshCore); it does not answer, the link drops and comes back.
+    Reboot,
     /// Remove the radio's bond and pair it again with the PIN it shows.
     Pair,
     /// The PIN typed for the pairing; None cancels it.
@@ -167,6 +171,7 @@ impl ToRadio {
                     error: Some(error),
                 }
             }
+            ToRadio::Reboot => return FromRadio::RebootFailed(error),
             ToRadio::Pair | ToRadio::Pin(_) => return FromRadio::Pairing(Pairing::Failed(error)),
         };
         FromRadio::SendFailed { conv, text, error }
