@@ -1,7 +1,8 @@
 //! tiles/compose.rs
 //! The map image: tiles, then marks for the nodes, my radio and the selected node (a pin).
 //! The Night look (Hacker theme) recolors the tiles, adds a grid, range rings, a crosshair
-//! and scanlines, and shows the nodes as air traffic control targets with labels.
+//! and scanlines, and shows the nodes as air traffic control targets. Both looks label the
+//! nodes with their names.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
@@ -9,8 +10,8 @@
 
 use image::{imageops, Rgba, RgbaImage};
 
-use super::font::{draw_text_at, glyph, CHAR_PX, TEXT_PX};
-use super::icons::{draw_icon, Icon, PIN_HEAD, PIN_RED};
+use super::font::{draw_smooth_at, draw_text_at, glyph, smooth_height, smooth_width, CHAR_PX, TEXT_PX};
+use super::icons::{draw_icon, Icon, ICON_HALF, PIN_HEAD, PIN_RED};
 use crate::radio::NodeKind;
 use super::Tiles;
 use crate::config::RINGS_KM;
@@ -133,6 +134,9 @@ pub fn compose(
     if night_look {
         radar(&mut img, view, marks);
         targets(&mut img, view, marks);
+    } else {
+        // Before the icons, so they cover the start of the leader lines.
+        plain_labels(&mut img, view, marks);
     }
     // Nodes, then my radio, then the selected node on top.
     for pass in 0..3 {
@@ -303,17 +307,65 @@ fn targets(img: &mut RgbaImage, view: &MapView, marks: &[(Pos, Mark)]) {
         let (x, y) = px(*pos);
         taken.push((x - 12, y - 12, x + 12, y + 12));
     }
-    let (w, h) = (i64::from(w), i64::from(h));
     let color = |icon: &Icon, selected| if selected { SELECTED } else { target_color(icon.age_mins) };
     // The selected node's symbol last, on top.
     for &(x, y, icon, selected) in nodes.iter().rev() {
         target(img, x, y, icon.kind, color(icon, selected));
     }
-    for &(x, y, icon, selected) in &nodes {
+    labels(img, &nodes, &mut taken, 6, color, false);
+}
+
+/// Normal-look labels: the Night look's placement, in white, around the icons and the pin.
+fn plain_labels(img: &mut RgbaImage, view: &MapView, marks: &[(Pos, Mark)]) {
+    let (w, h) = img.dimensions();
+    let mut nodes = Vec::new();
+    let mut taken: Vec<Area> = Vec::new();
+    for (pos, mark) in marks {
+        let (x, y) = view.screen_px(*pos, w, h);
+        let (x, y) = (x.round() as i64, y.round() as i64);
+        match mark {
+            Mark::Me => taken.push((x - 12, y - 12, x + 12, y + 12)),
+            Mark::Node(icon) => {
+                taken.push((x - ICON_HALF, y - ICON_HALF, x + ICON_HALF, y + ICON_HALF));
+                nodes.push((x, y, icon, false));
+            }
+            // The selected icon sits in the pin's head, above the node.
+            Mark::Selected(icon) => {
+                let top = y - PIN_HEAD;
+                taken.push((x - ICON_HALF, top - ICON_HALF, x + ICON_HALF, y));
+                nodes.push((x, top, icon, true));
+            }
+        }
+    }
+    nodes.sort_by_key(|(_, _, icon, selected)| (!selected, icon.age_mins.unwrap_or(u32::MAX)));
+    labels(img, &nodes, &mut taken, ICON_HALF, |_, _| SELECTED, true);
+}
+
+/// Each node's label on a leader line, in the first corner where it fits without covering
+/// `taken`; `nodes` come by priority. `start` is how far from the node the line begins.
+/// `smooth`: the name as written, in DejaVu Sans; otherwise the pixel capitals.
+fn labels(
+    img: &mut RgbaImage,
+    nodes: &[(i64, i64, &Icon, bool)],
+    taken: &mut Vec<Area>,
+    start: i64,
+    color: impl Fn(&Icon, bool) -> Rgba<u8>,
+    smooth: bool,
+) {
+    let (w, h) = (i64::from(img.width()), i64::from(img.height()));
+    let pitch = if smooth { smooth_height() + 2 } else { TEXT_PX + 4 };
+    for &(x, y, icon, selected) in nodes {
         let color = color(icon, selected);
-        let lines = data_block(icon, selected);
-        let width = lines.iter().map(|l| l.chars().count() as i64).max().unwrap_or(0) * CHAR_PX - 2;
-        let height = lines.len() as i64 * (TEXT_PX + 4) - 4;
+        let mut lines = data_block(icon, selected);
+        if smooth {
+            lines[0] = icon.name.chars().take(LABEL_CHARS).collect::<String>().trim().to_string();
+        }
+        let width = lines
+            .iter()
+            .map(|l| if smooth { smooth_width(l) } else { l.chars().count() as i64 * CHAR_PX - 2 })
+            .max()
+            .unwrap_or(0);
+        let height = lines.len() as i64 * pitch - (pitch - if smooth { smooth_height() } else { TEXT_PX });
         // Up right first, as on a controller's screen, then the other corners.
         let spot = [(1, -1), (1, 1), (-1, -1), (-1, 1)].into_iter().find_map(|(sx, sy)| {
             let left = if sx > 0 { x + LEADER_PX } else { x - LEADER_PX - width };
@@ -325,10 +377,15 @@ fn targets(img: &mut RgbaImage, view: &MapView, marks: &[(Pos, Mark)]) {
         let Some((sx, sy, area)) = spot else { continue };
         taken.push(area);
         let end = (if sx > 0 { area.0 } else { area.2 }, if sy < 0 { area.3 } else { area.1 });
-        leader(img, (x + sx * 6, y + sy * 6), end, color);
+        leader(img, (x + sx * start, y + sy * start), end, color);
         shade(img, area);
         for (i, line) in lines.iter().enumerate() {
-            draw_text_at(img, area.0 + 3, area.1 + 3 + i as i64 * (TEXT_PX + 4), line, color);
+            let top = area.1 + 3 + i as i64 * pitch;
+            if smooth {
+                draw_smooth_at(img, area.0 + 3, top, line, color);
+            } else {
+                draw_text_at(img, area.0 + 3, top, line, color);
+            }
         }
     }
 }

@@ -1,11 +1,14 @@
 //! tiles/font.rs
 //! A 5 x 7 bitmap font of capitals, digits and a few signs: a node's initials, and the
-//! labels of the Hacker map.
+//! labels of the Hacker map. The Normal map's labels use DejaVu Sans, smooth and accented.
 //!
 //! Author: O. Booklage
 //! Date: October 2026
 //! Licence: GPL-3.0
 
+use std::sync::OnceLock;
+
+use ab_glyph::{point, Font, FontRef, PxScale, PxScaleFont, ScaleFont};
 use image::RgbaImage;
 
 use image::Rgba;
@@ -84,5 +87,54 @@ pub(super) fn draw_text_at(img: &mut RgbaImage, left: i64, top: i64, text: &str,
                 }
             }
         }
+    }
+}
+
+/// DejaVu Sans (Bitstream Vera licence, see assets/fonts) at 11 px: the Normal map's labels.
+const SMOOTH_TTF: &[u8] = include_bytes!("../../assets/fonts/DejaVuSans.ttf");
+const SMOOTH_PX: f32 = 11.0;
+
+fn smooth() -> &'static PxScaleFont<FontRef<'static>> {
+    static FONT: OnceLock<PxScaleFont<FontRef<'static>>> = OnceLock::new();
+    FONT.get_or_init(|| {
+        FontRef::try_from_slice(SMOOTH_TTF)
+            .expect("bundled font")
+            .into_scaled(PxScale::from(SMOOTH_PX))
+    })
+}
+
+/// Width of `text` in the smooth font, in pixels.
+pub(super) fn smooth_width(text: &str) -> i64 {
+    let f = smooth();
+    text.chars().map(|c| f.h_advance(f.glyph_id(c))).sum::<f32>().ceil() as i64
+}
+
+/// Height of a line in the smooth font, in pixels.
+pub(super) fn smooth_height() -> i64 {
+    let f = smooth();
+    (f.ascent() - f.descent()).ceil() as i64
+}
+
+/// Draw `text` in the smooth font from its top left corner, blended over the image.
+pub(super) fn draw_smooth_at(img: &mut RgbaImage, left: i64, top: i64, text: &str, color: Rgba<u8>) {
+    let f = smooth();
+    let mut x = left as f32;
+    for c in text.chars() {
+        let id = f.glyph_id(c);
+        let glyph = id.with_scale_and_position(SMOOTH_PX, point(x, top as f32 + f.ascent()));
+        if let Some(outline) = f.outline_glyph(glyph) {
+            let b = outline.px_bounds();
+            outline.draw(|gx, gy, cover| {
+                let (px, py) = (b.min.x as i64 + i64::from(gx), b.min.y as i64 + i64::from(gy));
+                if px < 0 || py < 0 || px >= i64::from(img.width()) || py >= i64::from(img.height()) {
+                    return;
+                }
+                let p = img.get_pixel_mut(px as u32, py as u32);
+                for i in 0..3 {
+                    p[i] = (f32::from(p[i]) + (f32::from(color[i]) - f32::from(p[i])) * cover) as u8;
+                }
+            });
+        }
+        x += f.h_advance(id);
     }
 }
