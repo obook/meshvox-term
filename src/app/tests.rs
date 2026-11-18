@@ -636,6 +636,25 @@ fn advert_offline_or_on_meshtastic_is_refused() {
 }
 
 #[test]
+fn r_reboots_a_connected_meshcore_radio() {
+    let mut app = connected();
+    app.typing = false;
+    app.tab = Tab::Device;
+    assert_eq!(press(&mut app, KeyCode::Char('r')), Some(ToRadio::Reboot));
+    app.apply(FromRadio::RebootFailed("timeout".into()));
+    assert_eq!(app.notice.as_deref(), Some("Reboot failed: timeout"));
+    app.apply(FromRadio::Firmware(Firmware::Meshtastic));
+    assert_eq!(press(&mut app, KeyCode::Char('r')), None);
+    assert_eq!(app.notice.as_deref(), Some("Reboot is MeshCore only"));
+    app.apply(FromRadio::Link(Link::Lost("x".into())));
+    assert_eq!(press(&mut app, KeyCode::Char('r')), None);
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("Not connected, radio not rebooted")
+    );
+}
+
+#[test]
 fn p_pairs_from_the_device_tab_and_takes_the_pin() {
     let mut app = App::new("x", vec![]);
     app.tab = Tab::Device;

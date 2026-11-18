@@ -122,6 +122,8 @@ Keys:
 - `s` in the Map tab, Hacker look: turn the radar sweep on or off
 - `p` in the Device tab: pair the radio again; type its PIN, then Enter
   (Esc cancels)
+- `r` in the Device tab: reboot the radio (MeshCore); the link comes back
+  on its own, and a new node name reaches Bluetooth
 - `q` or Ctrl+C: quit
 
 Outside the input line only, the digits switch tabs and `q` quits.

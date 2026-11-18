@@ -430,6 +430,7 @@ impl Live {
                 Ok(())
             }
             ToRadio::Advert { .. } => anyhow::bail!("adverts are MeshCore only"),
+            ToRadio::Reboot => anyhow::bail!("reboot is MeshCore only"),
             ToRadio::Pair | ToRadio::Pin(_) => Ok(()), // the session ends first; Pin only while pairing
         }
     }
