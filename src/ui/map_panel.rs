@@ -58,6 +58,19 @@ impl MapState {
         }
     }
 
+    /// Ask the terminal its cell size again, after a font change (Ctrl +/- in Konsole): the
+    /// image is sized from it. The image protocol stays as chosen at start.
+    pub fn remeasure(&mut self) {
+        match Picker::from_query_stdio() {
+            Ok(mut picker) => {
+                picker.set_protocol_type(self.picker.protocol_type());
+                tracing::info!("map: font {:?}", picker.font_size());
+                self.picker = picker;
+            }
+            Err(e) => tracing::warn!("terminal image query failed: {e}"),
+        }
+    }
+
     /// The map's size in pixels at the last drawing; None before the first one.
     pub fn size_px(&self) -> Option<(u32, u32)> {
         self.size_px
