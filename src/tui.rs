@@ -50,8 +50,14 @@ pub fn run_tui(
         if !event::poll(Duration::from_millis(100))? {
             continue;
         }
-        let Event::Key(key) = event::read()? else {
-            continue;
+        let key = match event::read()? {
+            Event::Key(key) => key,
+            // A font change resizes the terminal too: the map needs the new cell size.
+            Event::Resize(..) if !app.ascii => {
+                map.remeasure();
+                continue;
+            }
+            _ => continue,
         };
         if key.kind != KeyEventKind::Press {
             continue;
