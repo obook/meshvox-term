@@ -144,6 +144,8 @@ pub fn my_radio(
         tx_power: lora.map_or(0, |l| l.tx_power.clamp(0, 255) as u8),
         max_tx_power: 0,
         shares_position: me.is_some_and(|m| m.position.is_some()),
+        telemetry: false,
+        path_hash: None,
         gps: None,
         preset: lora.filter(|l| l.use_preset).map(|l| {
             let region = RegionCode::try_from(l.region).map_or("?", |r| r.as_str_name());

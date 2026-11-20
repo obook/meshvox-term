@@ -338,7 +338,8 @@ impl MessageReader {
             }
 
             PacketType::ContactUri => {
-                let uri = String::from_utf8_lossy(payload).to_string();
+                // The payload is the raw advert packet, not text: the link is its hex form.
+                let uri = format!("meshcore://{}", hex_encode(payload));
                 let event = MeshCoreEvent::new(EventType::ContactUri, EventPayload::String(uri));
                 self.dispatcher.emit(event).await;
             }
@@ -1005,7 +1006,7 @@ mod tests {
         let mut receiver = dispatcher.receiver();
 
         let mut data = vec![PacketType::ContactUri as u8];
-        data.extend_from_slice(b"mod.rs://contact/abc123");
+        data.extend_from_slice(&[0xAB, 0xC1, 0x23]);
 
         reader.handle_rx(data).await.unwrap();
 
@@ -1016,7 +1017,7 @@ mod tests {
 
         assert_eq!(event.event_type, EventType::ContactUri);
         match event.payload {
-            EventPayload::String(s) => assert_eq!(s, "mod.rs://contact/abc123"),
+            EventPayload::String(s) => assert_eq!(s, "meshcore://abc123"),
             _ => panic!("Expected String payload"),
         }
     }

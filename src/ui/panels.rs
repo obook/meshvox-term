@@ -122,12 +122,14 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             (sideways, "filter", "FILTER"),
             ("Enter", "write", "COMPOSE"),
             ("p", "ping", "PING"),
+            ("r", "refresh", "REFRESH"),
         ],
         (Tab::Map, _) => vec![
             ("arrows", "pan", "PAN"),
             ("+/-", "zoom", "ZOOM"),
             ("[ ]", "node", "NODE"),
             ("p", "ping", "PING"),
+            ("r", "refresh", "REFRESH"),
             ("s", "", "SWEEP"), // Hacker look only
         ],
         (Tab::Device, _) if matches!(app.pairing, Some(Pairing::Pin(_))) => vec![
@@ -135,6 +137,9 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             ("Enter", "pair", "BOND"),
             ("Esc", "cancel", "ABORT"),
         ],
+        (Tab::Device, _) if app.editing.is_some() => {
+            vec![("Enter", "save", "WRITE"), ("Esc", "cancel", "ABORT")]
+        }
         (Tab::Device, _) if app.firmware == Firmware::MeshCore => vec![
             ("a", "advert to neighbours", "ADVERT ZERO-HOP"),
             ("f", "advert to all", "ADVERT FLOOD"),
@@ -143,7 +148,7 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
         ],
         (Tab::Device, _) => vec![("p", "pair", "PAIR")],
     };
-    if !app.typing && !matches!(app.pairing, Some(Pairing::Pin(_))) {
+    if !app.typing && app.editing.is_none() && !matches!(app.pairing, Some(Pairing::Pin(_))) {
         keys.extend([("1-4", "tabs", "TABS"), ("q", "quit", "EXIT")]);
     }
     keys

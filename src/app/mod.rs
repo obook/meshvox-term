@@ -8,9 +8,12 @@
 //! Licence: GPL-3.0
 
 mod keys;
+mod settings;
 #[cfg(test)]
 mod tests;
 mod update;
+
+pub use settings::Setting;
 
 use std::collections::{HashMap, HashSet};
 
@@ -94,6 +97,9 @@ pub struct App {
     pub pairing: Option<Pairing>,
     /// The PIN typed while the pairing asks for it.
     pub pin: String,
+    /// The setting typed in the Device tab, and its value so far.
+    pub editing: Option<Setting>,
+    pub edit: String,
     pub unread: HashMap<String, usize>,
     pub tab: Tab,
     /// Key of the conversation open in the Chats tab.
@@ -145,6 +151,8 @@ impl App {
             sweep: false,
             pairing: None,
             pin: String::new(),
+            editing: None,
+            edit: String::new(),
             unread: HashMap::new(),
             tab: Tab::Chats,
             chat: PUBLIC.into(),

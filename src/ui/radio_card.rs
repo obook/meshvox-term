@@ -12,7 +12,7 @@ use super::card::field;
 use super::format::{coord, hhmm, khz, uptime, LOW_BATTERY};
 use super::{alert, faint, text, Theme};
 use crate::app::App;
-use crate::radio::{Link, MyRadio, Pairing};
+use crate::radio::{Firmware, Link, MyRadio, Pairing};
 
 /// What my radio says about itself, its battery and the link.
 pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<Line<'a>> {
@@ -103,6 +103,15 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         let to = if flood { "ALL" } else { "NEIGHBOURS" };
         lines.push(field(theme, "SENT", format!("TO {to} {}", hhmm(ts)), text(theme)));
     }
+    if app.firmware == Firmware::MeshCore {
+        // Who may read my telemetry, as MeshVox's switch: every node or no one.
+        let telemetry = if radio.telemetry { "FOR ALL" } else { "FOR NO ONE" };
+        lines.push(field(theme, "TELEM", telemetry.into(), text(theme)));
+    }
+    if let Some(bytes) = radio.path_hash {
+        let unit = if bytes == 1 { "BYTE" } else { "BYTES" };
+        lines.push(field(theme, "HASH", format!("{bytes} {unit} PER RELAY"), text(theme)));
+    }
     // Whether the GPS receiver looks for satellites.
     lines.push(match radio.gps {
         Some(true) => field(theme, "GPS", "ON".into(), text(theme)),
@@ -126,6 +135,30 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         _ => field(theme, "LINK", "DOWN".into(), alert(theme)),
     });
     lines
+}
+
+/// The setting being typed: its value so far, what to type and the keys, in the alert color
+/// like the PIN.
+pub(super) fn editing_lines<'a>(app: &App, theme: Theme) -> Vec<Line<'a>> {
+    let Some(setting) = app.editing else {
+        // The setting keys: the footer has no room for them on 80 columns.
+        let settable = app.me.is_some() && app.firmware == Firmware::MeshCore;
+        return match settable {
+            true => vec![
+                Line::default(),
+                field(theme, "SET", "n name   t TX   l LoRa   e region   h path hash".into(), faint(theme)),
+                field(theme, "", "o position   g GPS   s share position   m telemetry".into(), faint(theme)),
+                field(theme, "", "u publish on map.meshcore.io".into(), faint(theme)),
+            ],
+            false => vec![],
+        };
+    };
+    vec![
+        Line::default(),
+        field(theme, setting.label(), format!("> {}_", app.edit), alert(theme)),
+        field(theme, "", setting.hint().into(), faint(theme)),
+        field(theme, "", "Enter: save   Esc: cancel".into(), faint(theme)),
+    ]
 }
 
 /// Where the pairing stands. When it asks for the PIN: what to type, where to read it and

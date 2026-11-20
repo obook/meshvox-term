@@ -33,6 +33,10 @@ struct Cli {
     /// BLE name or address of the radio (default: the first "MeshCore-..." found).
     #[arg(long)]
     device: Option<String>,
+    /// USB serial port of a MeshCore radio with the Companion USB firmware (e.g.
+    /// /dev/ttyACM0), instead of Bluetooth.
+    #[arg(long, value_name = "PORT", conflicts_with = "device")]
+    serial: Option<String>,
     /// Connect, print the radio's state and exit.
     #[arg(long)]
     probe: bool,
@@ -102,17 +106,22 @@ fn main() -> anyhow::Result<()> {
     // tokio runs asynchronous tasks; the BLE library (meshcore-rs on btleplug) needs it.
     let rt = tokio::runtime::Runtime::new()?;
     if cli.probe {
-        return rt.block_on(probe::probe(cli.device.as_deref()));
+        return rt.block_on(probe::probe(cli.device.as_deref(), cli.serial.as_deref()));
     }
     if let Some(command) = &cli.cli {
-        return rt.block_on(probe::cli(cli.device.as_deref(), command));
+        return rt.block_on(probe::cli(
+            cli.device.as_deref(),
+            cli.serial.as_deref(),
+            command,
+        ));
     }
 
     let history_path = history::default_path();
     let records = history::load(&history_path)?;
     let label = cli
-        .device
+        .serial
         .clone()
+        .or_else(|| cli.device.clone())
         .unwrap_or_else(|| radio::ANY_RADIO.into());
     let mut app = app::App::new(&label, records);
     app.ascii = cli.console || is_console(std::env::var("TERM").ok().as_deref());
@@ -121,7 +130,7 @@ fn main() -> anyhow::Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
     let cli_device = cli.device.clone();
     let cli_image = cli.image;
-    let (cmds, radio_task) = radio::spawn(&rt, cli.device, history_path, tx);
+    let (cmds, radio_task) = radio::spawn(&rt, cli.device, cli.serial, history_path, tx);
 
     let mut terminal = ratatui::init();
     // Asks the terminal how it shows images (Kitty, Sixel...); half blocks work everywhere.
@@ -181,6 +190,8 @@ fn main() -> anyhow::Result<()> {
         radio::Link::Searching(name) if name != radio::ANY_RADIO => Some(name.clone()),
         _ => cli_device,
     };
+    // A serial port (/dev/...) closes with the process: only a Bluetooth link is dropped by hand.
+    let name = name.filter(|n| !n.starts_with("/dev/"));
     if let (false, Some(name)) = (finished, name) {
         let _ = rt.block_on(async {
             tokio::time::timeout(Duration::from_secs(3), radio::ble_disconnect(&name)).await

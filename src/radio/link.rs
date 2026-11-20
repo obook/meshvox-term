@@ -6,6 +6,8 @@
 //! Date: October 2026
 //! Licence: GPL-3.0
 
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter};
@@ -112,6 +114,76 @@ pub async fn connect_to(name: &str) -> anyhow::Result<MeshCore> {
             let _ = ble_disconnect(name).await;
             Err(e.into())
         }
+    }
+}
+
+/// Speed of the MeshCore Companion USB firmware; a radio with native USB ignores it.
+const SERIAL_BAUD: u32 = 115_200;
+
+/// Open the MeshCore radio on the serial port `port` (Companion USB firmware).
+pub async fn serial_connect(port: &str) -> anyhow::Result<MeshCore> {
+    Ok(MeshCore::serial(port, SERIAL_BAUD).await?)
+}
+
+/// Where udev lists the serial ports under a stable name.
+const SERIAL_DIR: &str = "/dev/serial/by-id";
+/// How long a serial port has to answer as a MeshCore radio.
+const SERIAL_ANSWER: Duration = Duration::from_secs(2);
+
+/// The first serial port where a MeshCore radio answers, with its open link. A port that
+/// opens but stays silent is some other device: it goes to `silent` and is not written to
+/// again while it stays plugged in. `refused` gets why a port did not open, for the user.
+// ponytail: Linux only (udev's by-id directory), and a radio that resets when its port opens
+// (USB-UART bridge) stays silent; --serial covers both.
+pub async fn serial_radio(
+    silent: &mut HashSet<PathBuf>,
+    refused: &mut Option<String>,
+) -> Option<(String, MeshCore)> {
+    *refused = None;
+    let mut ports: Vec<PathBuf> = std::fs::read_dir(SERIAL_DIR)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .collect();
+    ports.sort();
+    silent.retain(|port| ports.contains(port));
+    for id in ports {
+        if silent.contains(&id) {
+            continue;
+        }
+        // The interface shows the short device name (/dev/ttyACM0).
+        let Ok(port) = std::fs::canonicalize(&id) else {
+            continue;
+        };
+        let port = port.to_string_lossy().into_owned();
+        let radio = match serial_connect(&port).await {
+            Ok(radio) => radio,
+            Err(e) => {
+                tracing::info!("{port}: {e:#}");
+                *refused = Some(refusal(&port, &format!("{e:#}")));
+                continue;
+            }
+        };
+        let hello = tokio::time::timeout(SERIAL_ANSWER, async {
+            radio.commands().lock().await.send_appstart().await
+        })
+        .await;
+        if matches!(hello, Ok(Ok(_))) {
+            return Some((port, radio));
+        }
+        tracing::info!("{port}: no MeshCore radio answered");
+        let _ = radio.disconnect().await;
+        silent.insert(id);
+    }
+    None
+}
+
+/// Why the serial port `port` did not open, with what to do when the user lacks the right.
+pub(super) fn refusal(port: &str, error: &str) -> String {
+    if error.contains("Permission denied") {
+        format!("{port}: permission denied (join the dialout group, then log in again)")
+    } else {
+        format!("{port}: {error}")
     }
 }
 

@@ -14,7 +14,9 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use meshcore_rs::MeshCore;
 
-use super::link::{ble_disconnect, candidates, connect_to, Candidate};
+use super::link::{
+    ble_disconnect, candidates, connect_to, serial_connect, serial_radio, Candidate,
+};
 use super::meshtastic::{self, RepairNeeded, Transport};
 use super::pair::pair;
 use super::session::session;
@@ -23,17 +25,101 @@ use super::{
 };
 use crate::config::RETRY;
 
-/// Run the radio in `rt`. It reconnects on its own and stops once the UI is gone;
-/// the handle lets the caller wait for its disconnect.
+/// Run the radio in `rt`: the MeshCore radio on the serial port `serial`, else a radio found
+/// over Bluetooth. It reconnects on its own and stops once the UI is gone; the handle lets
+/// the caller wait for its disconnect.
 pub fn spawn(
     rt: &tokio::runtime::Runtime,
     device: Option<String>,
+    serial: Option<String>,
     history: PathBuf,
     tx: Sender<FromRadio>,
 ) -> (UnboundedSender<ToRadio>, tokio::task::JoinHandle<()>) {
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-    let task = rt.spawn(run(device, history, tx, cmd_rx));
+    let task = match serial {
+        Some(port) => rt.spawn(run_serial(port, None, history, tx, cmd_rx)),
+        None => rt.spawn(run(device, history, tx, cmd_rx)),
+    };
     (cmd_tx, task)
+}
+
+/// Answer to the pair key on a serial link.
+const NO_PAIRING: &str = "no pairing over USB";
+
+/// The radio task on a serial port: no scan and no pairing, the port names the radio.
+/// `first` is the link the detection left open.
+async fn run_serial(
+    port: String,
+    mut first: Option<MeshCore>,
+    history: PathBuf,
+    tx: Sender<FromRadio>,
+    mut cmds: UnboundedReceiver<ToRadio>,
+) {
+    loop {
+        if tx
+            .send(FromRadio::Link(Link::Searching(port.clone())))
+            .is_err()
+        {
+            return;
+        }
+        let opened = match first.take() {
+            Some(radio) => Ok(radio),
+            None => serial_connect(&port).await,
+        };
+        let reason = match opened {
+            Ok(radio) => {
+                let end = session(&radio, &port, &history, &tx, &mut cmds).await;
+                // Closes the port: a rebooting radio gets the same device name back.
+                let _ = radio.disconnect().await;
+                match end {
+                    Ok(true) => "link lost".to_string(),
+                    Ok(false) => return, // UI gone
+                    Err(e) if e.is::<PairAsked>() => {
+                        let _ = tx.send(ToRadio::Pair.failed(NO_PAIRING.into()));
+                        continue;
+                    }
+                    Err(e) if e.is::<HistoryWriteFailed>() => {
+                        // Stop for good: every new fetch would lose a message.
+                        tracing::error!("radio: {e:#}");
+                        let _ = tx.send(FromRadio::Link(Link::Lost(format!(
+                            "{e:#} - fix it, then restart"
+                        ))));
+                        return;
+                    }
+                    Err(e) => format!("{e:#}"),
+                }
+            }
+            Err(e) => format!("{e:#}"),
+        };
+        tracing::warn!("radio: {reason}");
+        if tx.send(FromRadio::Link(Link::Lost(reason))).is_err() {
+            return;
+        }
+        if !pause_serial(&tx, &mut cmds).await {
+            return;
+        }
+    }
+}
+
+/// The pause before the next attempt on the serial port. false: the interface is gone.
+async fn pause_serial(tx: &Sender<FromRadio>, cmds: &mut UnboundedReceiver<ToRadio>) -> bool {
+    let end = tokio::time::sleep(RETRY);
+    tokio::pin!(end);
+    loop {
+        tokio::select! {
+            _ = &mut end => return true,
+            cmd = cmds.recv() => match cmd {
+                Some(ToRadio::Pin(_)) => {}
+                Some(ToRadio::Pair) => {
+                    let _ = tx.send(ToRadio::Pair.failed(NO_PAIRING.into()));
+                }
+                Some(cmd) => {
+                    let _ = tx.send(cmd.failed("not connected".into()));
+                }
+                None => return false,
+            }
+        }
+    }
 }
 
 /// Why no radio connected: a stale bond, when one was found, since the user can fix it;
@@ -60,7 +146,18 @@ pub(super) async fn run(
     // A stale bond is paired again once on its own; after that, on the user's key only, so a
     // cancelled PIN is not asked again and again.
     let mut auto_paired = false;
+    // Serial ports where no MeshCore radio answered.
+    let mut silent = std::collections::HashSet::new();
+    // Why a serial port did not open: shown when no radio connects.
+    let mut refused = None;
     loop {
+        if device.is_none() {
+            if let Some((port, radio)) = serial_radio(&mut silent, &mut refused).await {
+                // ponytail: the task stays on this port until the program is restarted; go
+                // back to the Bluetooth scan after a loss if someone needs both.
+                return run_serial(port, Some(radio), history, tx, cmds).await;
+            }
+        }
         if tx
             .send(FromRadio::Link(Link::Searching(label.clone())))
             .is_err()
@@ -162,6 +259,9 @@ pub(super) async fn run(
                 // Most often the radio is busy with a phone: keep the "Searching" banner
                 // and its hint.
                 tracing::info!("radio not reached: {e:#}");
+                if let Some(why) = &refused {
+                    let _ = tx.send(FromRadio::Link(Link::Lost(why.clone())));
+                }
                 if !pause(device.as_deref(), &tx, &mut cmds).await {
                     return;
                 }

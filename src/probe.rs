@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use meshcore_rs::{EventPayload, EventType};
+use meshcore_rs::{EventPayload, EventType, MeshCore};
 
 use crate::radio::{self, Candidate, Firmware};
 
@@ -20,7 +20,13 @@ const RESP_CODE_CLI_REPLY: u8 = 29;
 
 /// Send `command` to the first MeshCore radio that connects and print its reply. Only a
 /// failed connect moves on to the next radio: a command is never sent to two radios.
-pub async fn cli(device: Option<&str>, command: &str) -> anyhow::Result<()> {
+pub async fn cli(device: Option<&str>, serial: Option<&str>, command: &str) -> anyhow::Result<()> {
+    if let Some(radio) = usb_radio(device, serial).await? {
+        let reply = run_command(&radio, command).await;
+        let _ = radio.disconnect().await;
+        println!("{}", reply?);
+        return Ok(());
+    }
     let mut last = anyhow::anyhow!("no MeshCore radio found");
     for Candidate { name, firmware } in radio::candidates(device).await? {
         if firmware != Firmware::MeshCore {
@@ -33,30 +39,7 @@ pub async fn cli(device: Option<&str>, command: &str) -> anyhow::Result<()> {
                 continue;
             }
         };
-        let reply = async {
-            let cmd = radio.commands().lock().await;
-            cmd.send_appstart().await?;
-            let mut frame = vec![CMD_RUN_CLI_COMMAND];
-            frame.extend_from_slice(command.as_bytes());
-            // meshcore-rs does not know code 29: it arrives as an Unknown event, code included.
-            // An older firmware answers Error.
-            let event = cmd
-                .send_multi(
-                    &frame,
-                    &[EventType::Unknown, EventType::Error],
-                    Duration::from_secs(10),
-                )
-                .await?;
-            match event.payload {
-                EventPayload::Bytes(b) if b.first() == Some(&RESP_CODE_CLI_REPLY) => {
-                    Ok(String::from_utf8_lossy(&b[1..]).into_owned())
-                }
-                _ => Err(anyhow::anyhow!(
-                    "the radio did not run the command (firmware older than v14?)"
-                )),
-            }
-        }
-        .await;
+        let reply = run_command(&radio, command).await;
         // Drop the link even when the command failed, or a phone cannot reach the radio.
         let _ = radio.disconnect().await;
         let dropped = radio::ble_disconnect(&name).await;
@@ -66,8 +49,56 @@ pub async fn cli(device: Option<&str>, command: &str) -> anyhow::Result<()> {
     Err(last)
 }
 
-/// Probe the first radio that answers, of either firmware.
-pub async fn probe(device: Option<&str>) -> anyhow::Result<()> {
+/// Send the text command to a connected radio; return its reply.
+async fn run_command(radio: &MeshCore, command: &str) -> anyhow::Result<String> {
+    let cmd = radio.commands().lock().await;
+    cmd.send_appstart().await?;
+    let mut frame = vec![CMD_RUN_CLI_COMMAND];
+    frame.extend_from_slice(command.as_bytes());
+    // meshcore-rs does not know code 29: it arrives as an Unknown event, code included.
+    // An older firmware answers Error.
+    let event = cmd
+        .send_multi(
+            &frame,
+            &[EventType::Unknown, EventType::Error],
+            Duration::from_secs(10),
+        )
+        .await?;
+    match event.payload {
+        EventPayload::Bytes(b) if b.first() == Some(&RESP_CODE_CLI_REPLY) => {
+            Ok(String::from_utf8_lossy(&b[1..]).into_owned())
+        }
+        _ => Err(anyhow::anyhow!(
+            "the radio did not run the command (firmware older than v14?)"
+        )),
+    }
+}
+
+/// The MeshCore radio on the serial port `serial`; with neither option, the one found on a
+/// serial port, if any. None: use Bluetooth.
+async fn usb_radio(device: Option<&str>, serial: Option<&str>) -> anyhow::Result<Option<MeshCore>> {
+    Ok(match (serial, device) {
+        (Some(port), _) => Some(radio::serial_connect(port).await?),
+        (None, None) => {
+            let mut refused = None;
+            let found = radio::serial_radio(&mut Default::default(), &mut refused).await;
+            if let Some(why) = refused {
+                eprintln!("{why}");
+            }
+            found.map(|(_, radio)| radio)
+        }
+        (None, Some(_)) => None,
+    })
+}
+
+/// Probe the MeshCore radio on a serial port (`serial`, or found there), else the first radio
+/// that answers over Bluetooth, of either firmware.
+pub async fn probe(device: Option<&str>, serial: Option<&str>) -> anyhow::Result<()> {
+    if let Some(radio) = usb_radio(device, serial).await? {
+        let read = print_state(&radio).await;
+        let _ = radio.disconnect().await;
+        return read;
+    }
     let mut last = anyhow::anyhow!("no radio found");
     for Candidate { name, firmware } in radio::candidates(device).await? {
         let result = match firmware {
@@ -86,7 +117,16 @@ pub async fn probe(device: Option<&str>) -> anyhow::Result<()> {
 /// read failed.
 async fn meshcore(name: &str) -> anyhow::Result<()> {
     let radio = radio::connect_to(name).await?;
-    let read = async {
+    let read = print_state(&radio).await;
+    // Drop the link even when a read failed, or a phone cannot reach the radio.
+    let _ = radio.disconnect().await;
+    radio::ble_disconnect(name).await?;
+    read
+}
+
+/// Print the state of a connected MeshCore radio.
+async fn print_state(radio: &MeshCore) -> anyhow::Result<()> {
+    {
         let cmd = radio.commands().lock().await;
         let me = cmd.send_appstart().await?;
         let battery = cmd.get_bat().await?;
@@ -126,11 +166,6 @@ async fn meshcore(name: &str) -> anyhow::Result<()> {
             };
             println!("  {:<24} type {}  heard {heard}", c.adv_name, c.contact_type);
         }
-        anyhow::Ok(())
+        Ok(())
     }
-    .await;
-    // Drop the link even when a read failed, or a phone cannot reach the radio.
-    let _ = radio.disconnect().await;
-    radio::ble_disconnect(name).await?;
-    read
 }

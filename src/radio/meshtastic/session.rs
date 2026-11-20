@@ -431,6 +431,14 @@ impl Live {
             }
             ToRadio::Advert { .. } => anyhow::bail!("adverts are MeshCore only"),
             ToRadio::Reboot => anyhow::bail!("reboot is MeshCore only"),
+            ToRadio::Set(_) => anyhow::bail!("settings are MeshCore only"),
+            ToRadio::MapUpload => anyhow::bail!("map.meshcore.io is MeshCore only"),
+            ToRadio::Refresh => {
+                // The node database is kept up to date from the radio's packets: show it again.
+                self.send_nodes(tx);
+                let _ = tx.send(FromRadio::Notice("Nodes refreshed".into()));
+                Ok(())
+            }
             ToRadio::Pair | ToRadio::Pin(_) => Ok(()), // the session ends first; Pin only while pairing
         }
     }

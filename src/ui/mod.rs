@@ -36,7 +36,7 @@ use map_panel::draw_map;
 pub use map_panel::MapState;
 pub use menu::{draw_boot, draw_menu, menu_key, Menu, BOOT};
 use panels::{draw_footer, draw_header};
-use radio_card::{pairing_lines, radio_lines};
+use radio_card::{editing_lines, pairing_lines, radio_lines};
 
 const GREEN: Color = Color::Rgb(0, 255, 65);
 const DIM: Color = Color::Rgb(0, 140, 40);
@@ -193,6 +193,7 @@ fn draw_device(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
         ),
     };
     lines.extend(pairing_lines(app, theme));
+    lines.extend(editing_lines(app, theme));
     frame.render_widget(
         Paragraph::new(lines)
             .style(text(theme))

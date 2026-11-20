@@ -72,9 +72,27 @@ With Meshtastic:
 - the program sets the radio's clock at each connection;
 - the conversations of the two firmwares are kept apart in the history.
 
+Over USB, without Bluetooth (MeshCore only, tested on a ThinkNode M1 with
+Companion USB v1.18.0):
+
+```
+meshvox-term
+```
+
+The radio needs the MeshCore "Companion USB" firmware, and your user must
+be in the `dialout` group to open the port. There is no pairing over USB.
+
+Without `--device`, the program first asks each serial port of
+`/dev/serial/by-id` whether a MeshCore radio is there, and falls back to
+Bluetooth when none answers. A port that stays silent is not asked again.
+Once on a serial port, the program stays on it until it is restarted.
+`--serial /dev/ttyACM0` names the port instead; `--probe` and `--cli`
+follow the same rules.
+
 Options:
 
 - `--device <name or address>`: the radio to use
+- `--serial <port>`: the USB serial port of a MeshCore radio, see above
 - `--probe`: print the radio's state and exit
 - `--cli "<command>"`: send a text command to a MeshCore radio, print its
   reply and exit, e.g. `--cli "set ui.backlight_on_keys 1"`
@@ -122,6 +140,10 @@ Keys:
 - `s` in the Map tab, Hacker look: turn the radar sweep on or off
 - `p` in the Device tab: pair the radio again; type its PIN, then Enter
   (Esc cancels)
+- in the Device tab, settings of a MeshCore radio: `n` name, `t` TX power,
+  `l` LoRa parameters (MHz kHz SF CR), `o` position (latitude longitude);
+  type the value, then Enter. `g` turns the GPS on or off, `s` puts the
+  position in the adverts or takes it out
 - `r` in the Device tab: reboot the radio (MeshCore); the link comes back
   on its own, and a new node name reaches Bluetooth
 - `q` or Ctrl+C: quit

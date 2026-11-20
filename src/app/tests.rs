@@ -1063,3 +1063,129 @@ fn chats_with_equal_stamps_keep_a_stable_order() {
         assert_eq!(chat_labels(&app), first);
     }
 }
+
+/// Connected app on the Device tab, with my radio's card read.
+fn on_device_tab() -> App {
+    use crate::radio::MyRadio;
+    let mut app = connected();
+    app.typing = false;
+    app.tab = Tab::Device;
+    app.apply(FromRadio::MyRadio(MyRadio {
+        name: "bbok".into(),
+        freq_khz: 869_618,
+        bw_hz: 62_500,
+        sf: 8,
+        cr: 8,
+        tx_power: 20,
+        max_tx_power: 22,
+        gps: Some(true),
+        ..Default::default()
+    }));
+    app
+}
+
+#[test]
+fn a_typed_setting_is_checked_then_sent() {
+    use crate::radio::Change;
+    let mut app = on_device_tab();
+    press(&mut app, KeyCode::Char('l'));
+    assert_eq!(app.edit, "869.618 62.5 8 8", "filled with the radio's values");
+    // 'q' and '1' are text here, not quit and tab keys.
+    press(&mut app, KeyCode::Char('q'));
+    assert!(!app.quit);
+    assert_eq!(press(&mut app, KeyCode::Enter), None, "8q is no coding rate");
+    assert_eq!(app.notice.as_deref(), Some("Coding rate: 5 to 8"));
+    assert!(app.editing.is_some(), "the refused value stays in the line");
+    app.edit = "869,525 250 11 5".into();
+    assert_eq!(
+        press(&mut app, KeyCode::Enter),
+        Some(ToRadio::Set(Change::Lora {
+            freq_khz: 869_525,
+            bw_hz: 250_000,
+            sf: 11,
+            cr: 5
+        }))
+    );
+    assert_eq!(app.editing, None);
+
+    press(&mut app, KeyCode::Char('n'));
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(app.editing, None, "Esc sends nothing");
+}
+
+#[test]
+fn settings_are_refused_out_of_range() {
+    use crate::radio::{Change, MyRadio};
+    let me = MyRadio {
+        max_tx_power: 22,
+        ..Default::default()
+    };
+    let set = |change| Ok(ToRadio::Set(change));
+    assert_eq!(Setting::TxPower.parse("22", &me), set(Change::TxPower(22)));
+    assert!(Setting::TxPower.parse("23", &me).is_err());
+    assert!(Setting::TxPower.parse("-10", &me).is_err());
+    assert!(Setting::Name.parse("", &me).is_err());
+    assert!(Setting::Name.parse(&"é".repeat(16), &me).is_err(), "32 bytes");
+    assert!(Setting::Lora.parse("100 62.5 8 8", &me).is_err());
+    assert!(Setting::Lora.parse("869.618 62.5 8", &me).is_err());
+    assert!(Setting::Position.parse("91 0", &me).is_err());
+    assert_eq!(
+        Setting::Position.parse("44,8378 -0.5792", &me),
+        set(Change::Position(Pos {
+            lat: 44.8378,
+            lon: -0.5792
+        }))
+    );
+    assert_eq!(
+        Setting::Region.parse(" FR-33 ", &me),
+        set(Change::Region(Some("fr-33".into())))
+    );
+    assert_eq!(Setting::Region.parse("", &me), set(Change::Region(None)), "clears");
+    assert!(Setting::Region.parse("fr 33", &me).is_err());
+    assert!(Setting::Region.parse("-fr", &me).is_err());
+    assert_eq!(Setting::PathHash.parse("2", &me), set(Change::PathHash(2)));
+    assert!(Setting::PathHash.parse("4", &me).is_err());
+    // Publishing on the map takes a typed yes.
+    assert_eq!(Setting::MapUpload.parse("yes", &me), Ok(ToRadio::MapUpload));
+    assert!(Setting::MapUpload.parse("", &me).is_err());
+}
+
+#[test]
+fn up_and_down_walk_the_lora_presets() {
+    let mut app = on_device_tab();
+    press(&mut app, KeyCode::Char('l'));
+    assert_eq!(app.edit, "869.618 62.5 8 8", "the EU/UK (Narrow) preset");
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.edit, "869.525 250 11 5");
+    assert_eq!(app.notice.as_deref(), Some("Preset 10/27: EU/UK (Deprecated)"));
+    press(&mut app, KeyCode::Up);
+    assert_eq!(app.edit, "869.618 62.5 8 8");
+    // Every preset is a value the radio would take.
+    let me = crate::radio::MyRadio::default();
+    for (title, values) in settings::PRESETS {
+        assert!(Setting::Lora.parse(values, &me).is_ok(), "{title}");
+    }
+}
+
+#[test]
+fn g_and_s_toggle_and_need_a_connected_meshcore_radio() {
+    use crate::radio::Change;
+    let mut app = on_device_tab();
+    assert_eq!(
+        press(&mut app, KeyCode::Char('g')),
+        Some(ToRadio::Set(Change::Gps(false)))
+    );
+    assert_eq!(
+        press(&mut app, KeyCode::Char('s')),
+        Some(ToRadio::Set(Change::SharePosition(true)))
+    );
+    app.apply(FromRadio::Setting(Some("the radio refused the value".into())));
+    assert_eq!(
+        app.notice.as_deref(),
+        Some("Setting not saved: the radio refused the value")
+    );
+    app.apply(FromRadio::Link(Link::Lost("link lost".into())));
+    assert_eq!(press(&mut app, KeyCode::Char('g')), None);
+    press(&mut app, KeyCode::Char('n'));
+    assert_eq!(app.editing, None, "no editing without a link");
+}
