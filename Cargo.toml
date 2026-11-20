@@ -20,7 +20,7 @@ futures = "0.3"
 ab_glyph = "0.2"
 # Map tiles: PNG decoding and composing.
 image = { version = "0.25", default-features = false, features = ["png"] }
-meshcore-rs = { version = "0.2.0", default-features = false, features = ["ble"] }
+meshcore-rs = { version = "0.2.0", default-features = false, features = ["ble", "serial"] }
 # Meshtastic protobuf types only: our own Bluetooth code uses the shared manager.
 meshtastic = { version = "0.1.9", default-features = false }
 prost = "0.14"
@@ -29,6 +29,8 @@ ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
 # The map as an image in the terminal (Kitty, Sixel, or half blocks).
 ratatui-image = { version = "11.1", default-features = false, features = ["crossterm"] }
 serde = { version = "1", features = ["derive"] }
+# Key of a MeshCore region, and the digest the radio signs for map.meshcore.io.
+sha2 = "0.10"
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing = "0.1"
@@ -46,7 +48,9 @@ tempfile = "3"
 # meshcore-rs 0.2.0 patched in src/meshcore/ble.rs: one BLE manager per process and an
 # unsubscribe before subscribe (every reconnect duplicated all notifications), a leftover
 # scan stopped before a new one, and ble_disconnect() (disconnect() leaves the link up);
-# in src/reader.rs, the custom variables read in the firmware's "name:value,..." form.
+# in src/reader.rs, the custom variables read in the firmware's "name:value,..." form, and
+# an exported contact given as a meshcore:// link of its bytes (it was read as text);
+# in src/parsing.rs, the path hash mode read from the device info.
 [patch.crates-io]
 meshcore-rs = { path = "vendor/meshcore-rs" }
 

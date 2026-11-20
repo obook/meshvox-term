@@ -551,6 +551,8 @@ fn radio_app() -> App {
         tx_power: 22,
         max_tx_power: 22,
         shares_position: true,
+        telemetry: false,
+        path_hash: None,
         gps: Some(false),
         preset: None,
         region: Some(Some("fr-33".into())),

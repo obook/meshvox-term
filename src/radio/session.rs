@@ -17,13 +17,14 @@ use meshcore_rs::MeshCore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::convert::{
-    channel_msg, contact_msg, gps_from_vars, lipo_percent, my_radio, region_from_frame,
-    CMD_GET_DEFAULT_REGION,
+    change_frame, channel_msg, contact_msg, gps_from_vars, lipo_percent, map_body, map_data,
+    my_radio, region_from_frame, CMD_GET_DEFAULT_REGION, MAP_UPLOAD_URL,
 };
 use super::link::now;
 use super::ping::ping;
 use super::{
-    Battery, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, PairAsked, ToRadio,
+    Battery, Change, Firmware, FromRadio, HistoryWriteFailed, Link, MyRadio, Node, PairAsked,
+    ToRadio,
 };
 use crate::config::{CHECK_EVERY, CONTACTS_TIMEOUT};
 use crate::geo::{pos_from_micro, Pos};
@@ -39,37 +40,7 @@ pub(super) async fn session(
 ) -> anyhow::Result<bool> {
     // Subscribe first, so no push is missed while starting.
     let mut events = radio.event_stream();
-    let me = radio.commands().lock().await.send_appstart().await?;
-    let dev = radio.commands().lock().await.send_device_query().await;
-    if let Err(e) = &dev {
-        tracing::info!("device query: {e}");
-    }
-    let mut card = my_radio(&me, dev.as_ref().ok());
-    // An older firmware may not answer: the GPS state is then unknown, not a link failure.
-    match radio.commands().lock().await.get_custom_vars().await {
-        Ok(vars) => card.gps = gps_from_vars(&vars),
-        Err(e) => tracing::info!("custom vars: {e}"),
-    }
-    // meshcore-rs passes the unknown answer on as raw bytes; an older firmware answers an error.
-    let region = radio
-        .commands()
-        .lock()
-        .await
-        .send_multi(
-            &[CMD_GET_DEFAULT_REGION],
-            &[EventType::Unknown, EventType::Error],
-            meshcore_rs::commands::DEFAULT_TIMEOUT,
-        )
-        .await;
-    match region {
-        Ok(event) => {
-            if let EventPayload::Bytes(frame) = event.payload {
-                card.region = region_from_frame(&frame);
-            }
-        }
-        Err(e) => tracing::info!("default region: {e}"),
-    }
-    let pos = pos_from_micro(me.adv_lat, me.adv_lon);
+    let (card, pos) = read_card(radio).await?;
     announce(tx, Firmware::MeshCore, card, pos, name);
     // The firmware refuses to move its clock back (it answers an error, which meshcore-rs only
     // sees as a timeout); a GPS radio is often a second ahead. A clock not set is no link failure.
@@ -114,6 +85,18 @@ pub(super) async fn session(
                     ping(radio, key, prefix, tx);
                     continue;
                 }
+                if cmd == ToRadio::Refresh {
+                    // Here, not in send(): the names of the senders follow the new list.
+                    let _ = tx.send(match contacts(radio, tx).await {
+                        Ok(list) => {
+                            names = list;
+                            contacts_stale = false;
+                            FromRadio::Notice("Contacts refreshed".into())
+                        }
+                        Err(e) => cmd.failed(format!("{e:#}")),
+                    });
+                    continue;
+                }
                 if let Err(e) = send(radio, history, tx, &cmd).await {
                     // Sent but not saved: the message is shown, do not invite a resend.
                     if e.is::<HistoryWriteFailed>() {
@@ -132,6 +115,104 @@ pub(super) async fn session(
             }
         }
     }
+}
+
+/// What my radio says about itself, and its position: read at the start of a session and
+/// after each setting change, to show what the radio kept.
+async fn read_card(radio: &MeshCore) -> anyhow::Result<(MyRadio, Option<Pos>)> {
+    let me = radio.commands().lock().await.send_appstart().await?;
+    let dev = radio.commands().lock().await.send_device_query().await;
+    if let Err(e) = &dev {
+        tracing::info!("device query: {e}");
+    }
+    let mut card = my_radio(&me, dev.as_ref().ok());
+    // An older firmware may not answer: the GPS state is then unknown, not a link failure.
+    match radio.commands().lock().await.get_custom_vars().await {
+        Ok(vars) => card.gps = gps_from_vars(&vars),
+        Err(e) => tracing::info!("custom vars: {e}"),
+    }
+    // meshcore-rs passes the unknown answer on as raw bytes; an older firmware answers an error.
+    let region = radio
+        .commands()
+        .lock()
+        .await
+        .send_multi(
+            &[CMD_GET_DEFAULT_REGION],
+            &[EventType::Unknown, EventType::Error],
+            meshcore_rs::commands::DEFAULT_TIMEOUT,
+        )
+        .await;
+    match region {
+        Ok(event) => {
+            if let EventPayload::Bytes(frame) = event.payload {
+                card.region = region_from_frame(&frame);
+            }
+        }
+        Err(e) => tracing::info!("default region: {e}"),
+    }
+    Ok((card, pos_from_micro(me.adv_lat, me.adv_lon)))
+}
+
+/// Write one setting to the radio. An Error reply is a refusal, not a timeout.
+async fn set(radio: &MeshCore, change: &Change) -> anyhow::Result<()> {
+    let cmd = radio.commands().lock().await;
+    let me = cmd.send_appstart().await?;
+    let reply = cmd
+        .send_multi(
+            &change_frame(change, &me),
+            &[EventType::Ok, EventType::Error],
+            meshcore_rs::commands::DEFAULT_TIMEOUT,
+        )
+        .await?;
+    anyhow::ensure!(
+        reply.event_type == EventType::Ok,
+        "the radio refused the value"
+    );
+    Ok(())
+}
+
+/// Publish my radio on map.meshcore.io, as the MeshVox app does: the radio exports its own
+/// advert and signs the upload, so its private key never leaves it. Returns the map's answer.
+async fn map_upload(radio: &MeshCore) -> anyhow::Result<()> {
+    use sha2::Digest;
+    let body = {
+        let cmd = radio.commands().lock().await;
+        let me = cmd.send_appstart().await?;
+        // The map needs a position, and the official app wants it shared in the adverts.
+        anyhow::ensure!(
+            me.adv_loc_policy != 0 && (me.adv_lat, me.adv_lon) != (0, 0),
+            "set a position and share it in the adverts first"
+        );
+        let advert = cmd.export_contact(None::<Destination>).await?;
+        let data = map_data(&me, &advert);
+        let signature = cmd.sign(&sha2::Sha256::digest(&data), 120).await?;
+        map_body(&data, &signature, &me.public_key)
+    };
+    // ureq blocks: off the async threads, like the tile downloads.
+    tokio::task::spawn_blocking(move || {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(15)))
+            .http_status_as_error(false)
+            .build()
+            .into();
+        // Same content type as the reference uploader.
+        let mut reply = agent
+            .post(MAP_UPLOAD_URL)
+            .header("Content-Type", "text/plain;charset=UTF-8")
+            .send(body)?;
+        let status = reply.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let text = reply.body_mut().read_to_string().unwrap_or_default();
+        // The server answers JSON {"message": ...}; only its message is worth showing.
+        let message = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|json| json["message"].as_str().map(str::to_string))
+            .unwrap_or_else(|| text.chars().take(160).collect());
+        anyhow::bail!("the map answered {status}: {message}")
+    })
+    .await?
 }
 
 /// The start of a session, in this order: the firmware first, so the interface drops what it
@@ -251,8 +332,22 @@ pub(super) async fn send(
                 ack: None,
             }
         }
-        // Ping: handled by ping(); Pair: ends the session; Pin: only while pairing.
-        ToRadio::Ping { .. } | ToRadio::Pair | ToRadio::Pin(_) => return Ok(()),
+        // Ping and Refresh: handled by the session loop; Pair: ends the session; Pin: only
+        // while pairing.
+        ToRadio::Ping { .. } | ToRadio::Refresh | ToRadio::Pair | ToRadio::Pin(_) => return Ok(()),
+        ToRadio::Set(change) => {
+            set(radio, change).await?;
+            let _ = tx.send(FromRadio::Setting(None));
+            let (card, pos) = read_card(radio).await?;
+            let _ = tx.send(FromRadio::MyRadio(card));
+            let _ = tx.send(FromRadio::SelfPos(pos));
+            return Ok(());
+        }
+        ToRadio::MapUpload => {
+            map_upload(radio).await?;
+            let _ = tx.send(FromRadio::Notice("Published on map.meshcore.io".into()));
+            return Ok(());
+        }
         ToRadio::Reboot => {
             // No reply: the link drops and the task reconnects.
             radio.commands().lock().await.reboot().await?;

@@ -63,6 +63,7 @@ impl App {
                     // The PIN is typed in the Device tab, whatever was open.
                     self.pin.clear();
                     self.typing = false;
+                    self.editing = None;
                     self.tab = Tab::Device;
                 }
                 self.pairing = Some(state);
@@ -74,6 +75,11 @@ impl App {
                 error: Some(error), ..
             } => self.notice = Some(format!("Advert failed: {error}")),
             FromRadio::RebootFailed(error) => self.notice = Some(format!("Reboot failed: {error}")),
+            FromRadio::Notice(text) => self.notice = Some(text),
+            FromRadio::Setting(None) => self.notice = Some("Setting saved".into()),
+            FromRadio::Setting(Some(error)) => {
+                self.notice = Some(format!("Setting not saved: {error}"))
+            }
             FromRadio::SendFailed {
                 conv: failed,
                 text,

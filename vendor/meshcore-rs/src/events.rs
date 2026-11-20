@@ -266,6 +266,8 @@ pub struct DeviceInfoData {
     pub version: Option<String>,
     /// Repeat/relay mode enabled (v9+)
     pub repeat: Option<bool>,
+    /// Path hash mode: bytes per hash, minus one (v10+)
+    pub path_hash_mode: Option<u8>,
 }
 
 /// Battery and storage information

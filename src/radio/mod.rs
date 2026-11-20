@@ -21,7 +21,7 @@ mod tests;
 use crate::geo::Pos;
 use crate::history::{Record, PUBLIC};
 pub use convert::lipo_percent;
-pub use link::{ble_disconnect, candidates, connect_to, Candidate};
+pub use link::{ble_disconnect, candidates, connect_to, serial_connect, serial_radio, Candidate};
 pub(crate) use meshtastic::probe as probe_meshtastic;
 pub use task::spawn;
 
@@ -58,6 +58,10 @@ pub struct MyRadio {
     pub tx_power: u8,
     pub max_tx_power: u8,
     pub shares_position: bool,
+    /// Whether any node may read my telemetry (MeshCore).
+    pub telemetry: bool,
+    /// Bytes per relay in the paths my radio writes; None when the firmware did not say.
+    pub path_hash: Option<u8>,
     /// Whether the GPS receiver is on; None when the radio has none or did not say.
     pub gps: Option<bool>,
     /// Meshtastic region and modem preset ("EU_868 LONG_FAST"), when it uses one.
@@ -94,6 +98,33 @@ pub enum FromRadio {
     Pairing(Pairing),
     /// The reboot command could not be sent.
     RebootFailed(String),
+    /// A setting was saved, or not (the error).
+    Setting(Option<String>),
+    /// A line for the user: how a command of theirs ended.
+    Notice(String),
+}
+
+/// A setting of my MeshCore radio to change.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Change {
+    Name(String),
+    TxPower(i8),
+    Lora {
+        freq_khz: u32,
+        bw_hz: u32,
+        sf: u8,
+        cr: u8,
+    },
+    Position(Pos),
+    Gps(bool),
+    /// Whether my adverts carry my position.
+    SharePosition(bool),
+    /// Whether any node may read my telemetry.
+    Telemetry(bool),
+    /// Default region (flood scope), a public name like "fr-33"; None clears it.
+    Region(Option<String>),
+    /// Bytes per relay in the paths my radio writes: 1 to 3.
+    PathHash(u8),
 }
 
 /// Where a pairing stands.
@@ -128,6 +159,12 @@ pub enum ToRadio {
     },
     /// Reboot my radio (MeshCore); it does not answer, the link drops and comes back.
     Reboot,
+    /// Change a setting of my radio (MeshCore).
+    Set(Change),
+    /// Read the contact list again.
+    Refresh,
+    /// Publish my radio on map.meshcore.io: name, key, position, radio settings (MeshCore).
+    MapUpload,
     /// Remove the radio's bond and pair it again with the PIN it shows.
     Pair,
     /// The PIN typed for the pairing; None cancels it.
@@ -172,6 +209,9 @@ impl ToRadio {
                 }
             }
             ToRadio::Reboot => return FromRadio::RebootFailed(error),
+            ToRadio::Set(_) => return FromRadio::Setting(Some(error)),
+            ToRadio::Refresh => return FromRadio::Notice(format!("Refresh failed: {error}")),
+            ToRadio::MapUpload => return FromRadio::Notice(format!("Map upload failed: {error}")),
             ToRadio::Pair | ToRadio::Pin(_) => return FromRadio::Pairing(Pairing::Failed(error)),
         };
         FromRadio::SendFailed { conv, text, error }

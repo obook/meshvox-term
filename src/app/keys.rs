@@ -9,7 +9,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{kind_label, App, Filter, Ping, Tab, MY_RADIO};
+use super::{kind_label, App, Filter, Ping, Setting, Tab, MY_RADIO};
 use crate::config::{MAX_TEXT_BYTES, SCROLL_STEP};
 use crate::map::MapView;
 use crate::radio::{Firmware, Link, NodeKind, Pairing, ToRadio};
@@ -24,6 +24,9 @@ impl App {
         }
         if let Some(Pairing::Pin(_)) = self.pairing {
             return self.pin_key(key.code);
+        }
+        if let Some(setting) = self.editing {
+            return self.edit_key(setting, key.code);
         }
         if self.typing {
             return self.type_key(key.code);
@@ -43,6 +46,7 @@ impl App {
             (Tab::Contacts, KeyCode::Left) => self.move_filter(-1),
             (Tab::Contacts, KeyCode::Right) => self.move_filter(1),
             (Tab::Contacts | Tab::Map, KeyCode::Char('p')) => return self.ping(),
+            (Tab::Contacts | Tab::Map, KeyCode::Char('r')) => return self.refresh(),
             (Tab::Map, KeyCode::Char('[')) => self.select(self.selected.saturating_sub(1)),
             (Tab::Map, KeyCode::Char(']')) => self.select(self.selected + 1),
             (Tab::Map, KeyCode::Char('+' | '=')) => self.move_map(MapView::zoom_in),
@@ -56,6 +60,16 @@ impl App {
             (Tab::Device, KeyCode::Char('f')) => return self.advert(true),
             (Tab::Device, KeyCode::Char('p')) => return self.pair(),
             (Tab::Device, KeyCode::Char('r')) => return self.reboot(),
+            (Tab::Device, KeyCode::Char('n')) => self.open_edit(Setting::Name),
+            (Tab::Device, KeyCode::Char('t')) => self.open_edit(Setting::TxPower),
+            (Tab::Device, KeyCode::Char('l')) => self.open_edit(Setting::Lora),
+            (Tab::Device, KeyCode::Char('o')) => self.open_edit(Setting::Position),
+            (Tab::Device, KeyCode::Char('e')) => self.open_edit(Setting::Region),
+            (Tab::Device, KeyCode::Char('h')) => self.open_edit(Setting::PathHash),
+            (Tab::Device, KeyCode::Char('u')) => self.open_edit(Setting::MapUpload),
+            (Tab::Device, KeyCode::Char('g')) => return self.toggle_gps(),
+            (Tab::Device, KeyCode::Char('s')) => return self.toggle_share(),
+            (Tab::Device, KeyCode::Char('m')) => return self.toggle_telemetry(),
             _ => {}
         }
         None
@@ -240,6 +254,16 @@ impl App {
             return None;
         }
         Some(ToRadio::Advert { flood })
+    }
+
+    /// Read the contact list from the radio again, without waiting for the next advert.
+    fn refresh(&mut self) -> Option<ToRadio> {
+        if !matches!(self.link, Link::Connected(_)) {
+            self.notice = Some("Not connected, contacts not refreshed".into());
+            return None;
+        }
+        self.notice = Some("Refreshing contacts".into());
+        Some(ToRadio::Refresh)
     }
 
     fn reboot(&mut self) -> Option<ToRadio> {

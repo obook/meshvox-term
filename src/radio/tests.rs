@@ -286,6 +286,14 @@ fn a_stale_bluetooth_cache_is_reported_when_nothing_else_connects() {
 }
 
 #[test]
+fn a_refused_serial_port_says_what_to_do() {
+    use super::link::refusal;
+    let denied = refusal("/dev/ttyACM0", "Failed to open serial port: Permission denied");
+    assert!(denied.contains("/dev/ttyACM0") && denied.contains("dialout"));
+    assert_eq!(refusal("/dev/ttyACM0", "busy"), "/dev/ttyACM0: busy");
+}
+
+#[test]
 fn device_matches_a_name_or_an_address_in_any_case() {
     use super::link::is_device;
     let addr = "AA:BB:CC:DD:EE:FF";
@@ -325,6 +333,72 @@ fn the_region_frame_gives_the_name_or_none() {
     assert_eq!(region_from_frame(&[28]), Some(None), "no region set");
     assert_eq!(region_from_frame(&[1, 2, 3]), None, "another frame");
     assert_eq!(region_from_frame(&[]), None);
+}
+
+#[test]
+fn setting_frames_match_the_meshvox_app() {
+    use super::convert::change_frame;
+    use meshcore_rs::events::SelfInfo;
+    let me = SelfInfo {
+        manual_add_contacts: true,
+        telemetry_mode_base: 2,
+        telemetry_mode_loc: 1,
+        telemetry_mode_env: 3,
+        multi_acks: 1,
+        ..Default::default()
+    };
+    let frame = |change| change_frame(&change, &me);
+    assert_eq!(frame(Change::Name("bbok".into())), b"\x08bbok");
+    assert_eq!(frame(Change::TxPower(-9)), [12, 0xF7]);
+    assert_eq!(
+        frame(Change::Lora {
+            freq_khz: 869_618,
+            bw_hz: 62_500,
+            sf: 8,
+            cr: 8
+        }),
+        [11, 0xF2, 0x44, 0x0D, 0x00, 0x24, 0xF4, 0x00, 0x00, 8, 8]
+    );
+    let pos = crate::geo::Pos {
+        lat: 1.0,
+        lon: -1.0,
+    };
+    assert_eq!(
+        frame(Change::Position(pos)),
+        [14, 0x40, 0x42, 0x0F, 0x00, 0xC0, 0xBD, 0xF0, 0xFF]
+    );
+    assert_eq!(frame(Change::Gps(true)), b"\x29gps:1");
+    // The other three values are written back as they were read.
+    assert_eq!(frame(Change::SharePosition(true)), [38, 1, 0b11_01_10, 1, 1]);
+    assert_eq!(frame(Change::Telemetry(false)), [38, 1, 0b11_01_00, 0, 1]);
+    assert_eq!(frame(Change::PathHash(2)), [61, 0, 1]);
+    assert_eq!(frame(Change::Region(None)), [63]);
+    let region = frame(Change::Region(Some("fr-33".into())));
+    assert_eq!(region.len(), 1 + 31 + 16);
+    assert_eq!(&region[1..7], b"fr-33\0");
+    // First bytes of SHA-256("#fr-33"), from sha256sum.
+    assert_eq!(&region[32..36], [0x07, 0x70, 0x7b, 0x12]);
+}
+
+#[test]
+fn the_map_upload_text_is_written_as_the_uploader_does() {
+    use super::convert::{map_body, map_data};
+    let me = meshcore_rs::events::SelfInfo {
+        radio_freq: 869_618,
+        radio_bw: 250_000,
+        sf: 11,
+        cr: 5,
+        ..Default::default()
+    };
+    let data = map_data(&me, "meshcore://abc123");
+    assert_eq!(
+        data,
+        r#"{"params":{"freq":869.618,"cr":5,"sf":11,"bw":250},"links":["meshcore://abc123"]}"#
+    );
+    let body: serde_json::Value = serde_json::from_str(&map_body(&data, &[0xAB], &[1, 2])).unwrap();
+    assert_eq!(body["data"], data.as_str());
+    assert_eq!(body["signature"], "ab");
+    assert_eq!(body["publicKey"], "0102");
 }
 
 #[test]

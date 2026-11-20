@@ -255,6 +255,7 @@ pub fn parse_device_info(data: &[u8]) -> DeviceInfoData {
             model: None,
             version: None,
             repeat: None,
+            path_hash_mode: None,
         };
     }
 
@@ -271,6 +272,7 @@ pub fn parse_device_info(data: &[u8]) -> DeviceInfoData {
             model: None,
             version: None,
             repeat: None,
+            path_hash_mode: None,
         };
     }
 
@@ -323,6 +325,8 @@ pub fn parse_device_info(data: &[u8]) -> DeviceInfoData {
         model,
         version,
         repeat,
+        // v10+ path hash mode, after the repeat byte
+        path_hash_mode: data.get(80).copied(),
     }
 }
 
