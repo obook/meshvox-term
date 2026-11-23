@@ -181,10 +181,28 @@ pub async fn serial_radio(
 /// Why the serial port `port` did not open, with what to do when the user lacks the right.
 pub(super) fn refusal(port: &str, error: &str) -> String {
     if error.contains("Permission denied") {
-        format!("{port}: permission denied (join the dialout group, then log in again)")
+        // The group that owns serial ports differs: dialout on Debian, uucp on Arch.
+        let group = port_group(port).unwrap_or_else(|| "dialout".into());
+        format!("{port}: permission denied (join the {group} group, then log in again)")
     } else {
         format!("{port}: {error}")
     }
+}
+
+/// The name of the group that owns the file `port`.
+fn port_group(port: &str) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let gid = std::fs::metadata(port).ok()?.gid();
+    group_name(&std::fs::read_to_string("/etc/group").ok()?, gid)
+}
+
+/// The name of the group `gid` in `etc_group`, the text of /etc/group.
+pub(super) fn group_name(etc_group: &str, gid: u32) -> Option<String> {
+    etc_group.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        (fields.nth(1)?.parse() == Ok(gid)).then(|| name.to_string())
+    })
 }
 
 /// meshcore-rs 0.2.0 `disconnect()` only stops its own tasks: the BLE link stays up and a
