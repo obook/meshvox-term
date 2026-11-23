@@ -112,11 +112,13 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         let unit = if bytes == 1 { "BYTE" } else { "BYTES" };
         lines.push(field(theme, "HASH", format!("{bytes} {unit} PER RELAY"), text(theme)));
     }
-    // Whether the GPS receiver looks for satellites.
-    lines.push(match radio.gps {
-        Some(true) => field(theme, "GPS", "ON".into(), text(theme)),
-        Some(false) => field(theme, "GPS", "OFF".into(), text(theme)),
-        None => field(theme, "GPS", "-".into(), faint(theme)),
+    // Whether the GPS receiver looks for satellites; a switch set to off keeps it off,
+    // whatever the setting says.
+    lines.push(match (radio.gps, radio.gps_switch) {
+        (Some(_), Some(false)) => field(theme, "GPS", "OFF (SWITCH)".into(), text(theme)),
+        (Some(true), _) => field(theme, "GPS", "ON".into(), text(theme)),
+        (Some(false), _) => field(theme, "GPS", "OFF".into(), text(theme)),
+        (None, _) => field(theme, "GPS", "-".into(), faint(theme)),
     });
     // shortcut: the maximum is not shown; meshcore-rs 0.2.0 caps the firmware's value at 255.
     lines.push(field(

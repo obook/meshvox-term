@@ -554,6 +554,7 @@ fn radio_app() -> App {
         telemetry: false,
         path_hash: None,
         gps: Some(false),
+        gps_switch: None,
         preset: None,
         region: Some(Some("fr-33".into())),
     }));
@@ -587,6 +588,19 @@ fn card_for_my_radio() {
         assert!(s.contains(w), "{w} missing in\n{s}");
     }
     assert!(normal(&radio_app()).contains("My radio: bbok"));
+}
+
+#[test]
+fn card_says_when_the_gps_switch_keeps_the_gps_off() {
+    let mut app = radio_app();
+    app.apply(FromRadio::MyRadio(MyRadio {
+        name: "bbok".into(),
+        gps: Some(true),
+        gps_switch: Some(false),
+        ..Default::default()
+    }));
+    let s = screen(&app);
+    assert!(s.contains("GPS    OFF (SWITCH)"), "missing in\n{s}");
 }
 
 #[test]

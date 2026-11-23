@@ -17,7 +17,7 @@ use meshcore_rs::MeshCore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::convert::{
-    change_frame, channel_msg, contact_msg, gps_from_vars, lipo_percent, map_body, map_data,
+    change_frame, channel_msg, contact_msg, gps_from_vars, gps_switch_from_vars, lipo_percent, map_body, map_data,
     my_radio, region_from_frame, CMD_GET_DEFAULT_REGION, MAP_UPLOAD_URL,
 };
 use super::link::now;
@@ -128,7 +128,10 @@ async fn read_card(radio: &MeshCore) -> anyhow::Result<(MyRadio, Option<Pos>)> {
     let mut card = my_radio(&me, dev.as_ref().ok());
     // An older firmware may not answer: the GPS state is then unknown, not a link failure.
     match radio.commands().lock().await.get_custom_vars().await {
-        Ok(vars) => card.gps = gps_from_vars(&vars),
+        Ok(vars) => {
+            card.gps = gps_from_vars(&vars);
+            card.gps_switch = gps_switch_from_vars(&vars);
+        }
         Err(e) => tracing::info!("custom vars: {e}"),
     }
     // meshcore-rs passes the unknown answer on as raw bytes; an older firmware answers an error.

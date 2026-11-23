@@ -424,3 +424,17 @@ fn the_gps_variable_says_on_or_off() {
     assert_eq!(gps_from_vars(&vars(&[])), None, "no GPS in the firmware");
     assert_eq!(gps_from_vars(&vars(&[("gps", "x")])), None);
 }
+
+#[test]
+fn the_gps_switch_variable_says_on_or_off() {
+    use super::convert::gps_switch_from_vars;
+    let vars = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect::<std::collections::HashMap<_, _>>()
+    };
+    assert_eq!(gps_switch_from_vars(&vars(&[("gps", "1"), ("gps_switch", "0")])), Some(false));
+    assert_eq!(gps_switch_from_vars(&vars(&[("gps_switch", "1")])), Some(true));
+    assert_eq!(gps_switch_from_vars(&vars(&[("gps", "1")])), None, "no switch reported");
+}
