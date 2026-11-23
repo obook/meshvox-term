@@ -112,9 +112,10 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
         let unit = if bytes == 1 { "BYTE" } else { "BYTES" };
         lines.push(field(theme, "HASH", format!("{bytes} {unit} PER RELAY"), text(theme)));
     }
-    // Whether the GPS receiver looks for satellites; a switch set to off keeps it off.
+    // Whether the GPS receiver looks for satellites; a switch set to off keeps it off,
+    // whatever the setting says.
     lines.push(match (radio.gps, radio.gps_switch) {
-        (Some(true), Some(false)) => field(theme, "GPS", "ON, SWITCH OFF".into(), text(theme)),
+        (Some(_), Some(false)) => field(theme, "GPS", "OFF (SWITCH)".into(), text(theme)),
         (Some(true), _) => field(theme, "GPS", "ON".into(), text(theme)),
         (Some(false), _) => field(theme, "GPS", "OFF".into(), text(theme)),
         (None, _) => field(theme, "GPS", "-".into(), faint(theme)),

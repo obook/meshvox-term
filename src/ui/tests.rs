@@ -600,7 +600,7 @@ fn card_says_when_the_gps_switch_keeps_the_gps_off() {
         ..Default::default()
     }));
     let s = screen(&app);
-    assert!(s.contains("GPS    ON, SWITCH OFF"), "missing in\n{s}");
+    assert!(s.contains("GPS    OFF (SWITCH)"), "missing in\n{s}");
 }
 
 #[test]
