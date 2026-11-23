@@ -289,8 +289,17 @@ fn a_stale_bluetooth_cache_is_reported_when_nothing_else_connects() {
 fn a_refused_serial_port_says_what_to_do() {
     use super::link::refusal;
     let denied = refusal("/dev/ttyACM0", "Failed to open serial port: Permission denied");
-    assert!(denied.contains("/dev/ttyACM0") && denied.contains("dialout"));
+    assert!(denied.contains("/dev/ttyACM0") && denied.contains("group"));
     assert_eq!(refusal("/dev/ttyACM0", "busy"), "/dev/ttyACM0: busy");
+}
+
+#[test]
+fn the_group_of_a_serial_port_is_read_from_etc_group() {
+    use super::link::group_name;
+    let etc_group = "root:x:0:\nuucp:x:14:alice\ndialout:x:20:bob\n";
+    assert_eq!(group_name(etc_group, 14).as_deref(), Some("uucp"));
+    assert_eq!(group_name(etc_group, 20).as_deref(), Some("dialout"));
+    assert_eq!(group_name(etc_group, 99), None);
 }
 
 #[test]
