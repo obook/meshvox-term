@@ -1,8 +1,8 @@
 # MeshVox Term
 
-A terminal client for a MeshCore or Meshtastic radio over Bluetooth. You
-can send and receive messages, direct or on the public channel, and see the
-nodes on a map. The program finds out which firmware the radio runs.
+A terminal client for a MeshCore or Meshtastic radio over Bluetooth, or a
+MeshCore radio plugged in over USB. You can send and receive messages,
+direct or on the public channel, and see the nodes on a map. The program finds out which firmware the radio runs.
 
 Tested on Linux (BlueZ) with an ELECROW ThinkNode M5 running either the
 MeshCore Companion Bluetooth v1.18.0 firmware from
@@ -72,27 +72,11 @@ With Meshtastic:
 - the program sets the radio's clock at each connection;
 - the conversations of the two firmwares are kept apart in the history.
 
-Over USB, without Bluetooth (MeshCore only, tested on a ThinkNode M1 with
-Companion USB v1.18.0):
-
-```
-meshvox-term
-```
-
-The radio needs the MeshCore "Companion USB" firmware, and your user must
-be in the `dialout` group to open the port. There is no pairing over USB.
-
-Without `--device`, the program first asks each serial port of
-`/dev/serial/by-id` whether a MeshCore radio is there, and falls back to
-Bluetooth when none answers. A port that stays silent is not asked again.
-Once on a serial port, the program stays on it until it is restarted.
-`--serial /dev/ttyACM0` names the port instead; `--probe` and `--cli`
-follow the same rules.
-
 Options:
 
 - `--device <name or address>`: the radio to use
-- `--serial <port>`: the USB serial port of a MeshCore radio, see above
+- `--serial <port>`: the USB serial port of a MeshCore radio, see
+  [Over USB](#over-usb)
 - `--probe`: print the radio's state and exit
 - `--cli "<command>"`: send a text command to a MeshCore radio, print its
   reply and exit, e.g. `--cli "set ui.backlight_on_keys 1"`
@@ -105,6 +89,52 @@ Options:
 The map looks best in a terminal that shows images with the Kitty, Sixel
 or iTerm2 protocol, like Konsole. Other terminals get a coarser picture
 made of half blocks.
+
+## Over USB
+
+MeshCore only, tested on a ThinkNode M1 with the Companion USB v1.18.0
+firmware. Meshtastic over USB is not supported.
+
+1. Flash the MeshCore "Companion USB" firmware from
+   https://meshcore.io/flasher: the Companion Bluetooth firmware does not
+   talk over USB.
+2. Give your user the right to open serial ports, then log out and in
+   again:
+
+   ```
+   sudo usermod -aG dialout $USER
+   ```
+
+   That group is `dialout` on Debian, Ubuntu and Fedora, `uucp` on Arch.
+   `ls -l /dev/ttyACM0` shows the group of the port.
+
+3. Plug the radio in. It shows up under `/dev/serial/by-id/`, as
+   `/dev/ttyACM0` for instance:
+
+   ```
+   ls -l /dev/serial/by-id/
+   ```
+
+4. Run `meshvox-term`, or `meshvox-term --probe` to check the link.
+
+Without `--device` or `--serial`, the program asks each port of
+`/dev/serial/by-id` whether a MeshCore radio answers, within 2 seconds,
+and falls back to the Bluetooth scan when none does; it looks at the ports
+again before each Bluetooth attempt, so a radio plugged in later is found.
+A port that opens but stays silent (another device) is not asked again
+while it stays plugged in. A port the user cannot open is named in the
+banner, with the group to join.
+
+`--serial /dev/ttyACM0` names the port and skips the search and Bluetooth.
+Use it when the radio resets as its port opens (a radio behind a USB-UART
+bridge), since the search then finds it silent. `--probe` and `--cli`
+follow the same rules. `--device` and `--serial` cannot be given together.
+
+Once on a serial port, the program stays on it until it is restarted: the
+header names the port, and after an unplug or a reboot (`r` in the Device
+tab) it opens the same port again every 5 seconds. There is no pairing over
+USB: `p` in the Device tab answers "no pairing over USB". Everything else
+works as over Bluetooth: messages, contacts, map and the radio settings.
 
 ## Tabs and keys
 
