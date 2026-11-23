@@ -38,6 +38,7 @@ pub fn my_radio(
         telemetry: me.telemetry_mode_base != 0,
         path_hash: dev.and_then(|device| device.path_hash_mode).map(|mode| mode + 1),
         gps: None,
+        gps_switch: None,
         preset: None,
         region: None,
     }
@@ -150,7 +151,17 @@ pub fn region_from_frame(frame: &[u8]) -> Option<Option<String>> {
 /// The GPS state in the radio's custom variables: "gps" is 1 or 0, and only there when the
 /// firmware has a GPS.
 pub fn gps_from_vars(vars: &std::collections::HashMap<String, String>) -> Option<bool> {
-    match vars.get("gps")?.trim() {
+    flag_from_vars(vars, "gps")
+}
+
+/// The GPS switch in the radio's custom variables: "gps_switch" is 1 or 0, read-only, and only
+/// there when the firmware reports it (our M1 build).
+pub fn gps_switch_from_vars(vars: &std::collections::HashMap<String, String>) -> Option<bool> {
+    flag_from_vars(vars, "gps_switch")
+}
+
+fn flag_from_vars(vars: &std::collections::HashMap<String, String>, name: &str) -> Option<bool> {
+    match vars.get(name)?.trim() {
         "1" => Some(true),
         "0" => Some(false),
         _ => None,

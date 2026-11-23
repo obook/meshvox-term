@@ -64,6 +64,9 @@ pub struct MyRadio {
     pub path_hash: Option<u8>,
     /// Whether the GPS receiver is on; None when the radio has none or did not say.
     pub gps: Option<bool>,
+    /// Whether the GPS switch lets the receiver run; None when the radio has no switch or did
+    /// not say. When it is off, the GPS stays off whatever `gps` says.
+    pub gps_switch: Option<bool>,
     /// Meshtastic region and modem preset ("EU_868 LONG_FAST"), when it uses one.
     pub preset: Option<String>,
     /// MeshCore default region (flood scope). None: not read (Meshtastic, or a firmware older

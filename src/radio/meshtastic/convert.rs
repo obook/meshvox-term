@@ -147,6 +147,7 @@ pub fn my_radio(
         telemetry: false,
         path_hash: None,
         gps: None,
+        gps_switch: None,
         preset: lora.filter(|l| l.use_preset).map(|l| {
             let region = RegionCode::try_from(l.region).map_or("?", |r| r.as_str_name());
             let preset = ModemPreset::try_from(l.modem_preset).map_or("?", |p| p.as_str_name());
