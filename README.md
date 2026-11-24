@@ -149,7 +149,7 @@ The screen has four tabs, as in the MeshVox Android app:
   Repeaters to ping a repeater. The favorites are the
   ones set on the radio, from the MeshVox app for instance
 - **3 Map**: the map and the selected node's card
-- **4 Device**: my radio's card
+- **4 Device**: my radio's card, and the console that changes its settings
 
 A node heard in the last hour is online: its name is in bold wherever it
 is written, and marked in the contact list.
@@ -170,10 +170,16 @@ Keys:
 - `s` in the Map tab, Hacker look: turn the radar sweep on or off
 - `p` in the Device tab: pair the radio again; type its PIN, then Enter
   (Esc cancels)
-- in the Device tab, settings of a MeshCore radio: `n` name, `t` TX power,
-  `l` LoRa parameters (MHz kHz SF CR), `o` position (latitude longitude);
-  type the value, then Enter. `g` turns the GPS on or off, `s` puts the
-  position in the adverts or takes it out
+- `:` in the Device tab: the console, under the radio's card. Type a
+  command, then Enter; the radio's answer (OK, or ERR and why) follows it.
+  `help` lists the commands; Up and Down bring back the last ones, PgUp and
+  PgDn scroll, Esc closes. Settings of a MeshCore radio: `set name bbok`,
+  `set tx 20`, `set radio 869.618 62.5 8 8` (MHz kHz SF CR) or `set radio
+  preset 10` (`presets` lists them), `set pos 44.8378 -0.5792`, `set region
+  fr-33`, `set hash 2`, `set gps on`, `set share off` (my position in my
+  adverts), `set telemetry on`; `get` shows them. Also `advert`, `advert
+  flood`, `map upload` (publish on map.meshcore.io), `reboot`, `pair`
+- `a` and `f` in the Device tab: advert to the neighbours, or to all
 - `r` in the Device tab: reboot the radio (MeshCore); the link comes back
   on its own, and a new node name reaches Bluetooth
 - `q` or Ctrl+C: quit

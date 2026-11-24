@@ -1,21 +1,16 @@
 //! app/settings.rs
-//! The settings of my MeshCore radio, changed from the Device tab: a typed value (name, TX
-//! power, LoRa parameters, position, region, path hash size) is checked here before it goes
-//! to the radio, as the MeshVox app does; GPS, position sharing and telemetry are toggled.
-//! The publication on map.meshcore.io is confirmed by typing "yes" in the same input line.
+//! The settings of my MeshCore radio, changed from the console of the Device tab: a typed
+//! value (name, TX power, LoRa parameters, position, region, path hash size, GPS, position
+//! sharing, telemetry) is checked here before it goes to the radio, as the MeshVox app does.
 //!
 //! Author: O. Booklage
 //! Date: November 2026
 //! Licence: GPL-3.0
 
-use ratatui::crossterm::event::KeyCode;
-
 use super::App;
 use crate::geo::Pos;
 use crate::radio::{Change, Firmware, Link, MyRadio, ToRadio};
 
-/// Longest value typed for a setting, in bytes.
-const MAX_EDIT_BYTES: usize = 48;
 /// Upper TX power limit when the radio did not give its own.
 const DEFAULT_MAX_TX_DBM: i8 = 22;
 
@@ -52,7 +47,7 @@ pub const PRESETS: [(&str, &str); 27] = [
     ("Vietnam (Deprecated)", "920.25 250 11 5"),
 ];
 
-/// What is typed in the input line of the Device tab.
+/// A setting of my radio, as the console names it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Setting {
     Name,
@@ -61,38 +56,61 @@ pub enum Setting {
     Position,
     Region,
     PathHash,
-    /// Not a setting: the "yes" that publishes my radio on map.meshcore.io.
-    MapUpload,
+    Gps,
+    Share,
+    Telemetry,
 }
 
 impl Setting {
-    pub fn label(self) -> &'static str {
+    pub const ALL: [Setting; 9] = [
+        Setting::Name,
+        Setting::TxPower,
+        Setting::Lora,
+        Setting::Position,
+        Setting::Region,
+        Setting::PathHash,
+        Setting::Gps,
+        Setting::Share,
+        Setting::Telemetry,
+    ];
+
+    /// The word that names it in the console.
+    pub fn word(self) -> &'static str {
         match self {
-            Setting::Name => "NAME",
-            Setting::TxPower => "TX",
-            Setting::Lora => "LORA",
-            Setting::Position => "POS",
-            Setting::Region => "REGION",
-            Setting::PathHash => "HASH",
-            Setting::MapUpload => "MAP",
+            Setting::Name => "name",
+            Setting::TxPower => "tx",
+            Setting::Lora => "radio",
+            Setting::Position => "pos",
+            Setting::Region => "region",
+            Setting::PathHash => "hash",
+            Setting::Gps => "gps",
+            Setting::Share => "share",
+            Setting::Telemetry => "telemetry",
         }
     }
 
-    /// What to type.
+    pub fn named(word: &str) -> Option<Setting> {
+        Setting::ALL.into_iter().find(|s| s.word() == word)
+    }
+
+    /// What to type after the word.
     pub fn hint(self) -> &'static str {
         match self {
-            Setting::Name => "node name",
+            Setting::Name => "node name, 31 bytes at most",
             Setting::TxPower => "dBm",
-            Setting::Lora => "MHz kHz SF CR, e.g. 869.618 62.5 8 8; up/down: presets",
+            Setting::Lora => "MHz kHz SF CR, e.g. 869.618 62.5 8 8; or preset <n>",
             Setting::Position => "latitude longitude, e.g. 44.8378 -0.5792",
-            Setting::Region => "public region, e.g. fr-33; empty: none",
+            Setting::Region => "public region, e.g. fr-33; nothing: none",
             Setting::PathHash => "bytes per relay in paths: 1, 2 or 3",
-            Setting::MapUpload => "yes: publish name, key and position on map.meshcore.io",
+            Setting::Gps => "on or off: the GPS receiver",
+            Setting::Share => "on or off: my position in my adverts",
+            Setting::Telemetry => "on or off: my telemetry for every node or no one",
         }
     }
 
     /// The value the radio has now, as it would be typed.
-    fn current(self, me: &MyRadio, pos: Option<Pos>) -> String {
+    pub(super) fn current(self, me: &MyRadio, pos: Option<Pos>) -> String {
+        let on_off = |on: bool| if on { "on" } else { "off" }.to_string();
         match self {
             Setting::Name => me.name.clone(),
             Setting::TxPower => (me.tx_power as i8).to_string(),
@@ -106,7 +124,9 @@ impl Setting {
             Setting::Position => pos.map_or_else(String::new, |p| format!("{} {}", p.lat, p.lon)),
             Setting::Region => me.region.clone().flatten().unwrap_or_default(),
             Setting::PathHash => me.path_hash.map_or_else(String::new, |n| n.to_string()),
-            Setting::MapUpload => String::new(),
+            Setting::Gps => me.gps.map_or_else(|| "-".into(), on_off),
+            Setting::Share => on_off(me.shares_position),
+            Setting::Telemetry => on_off(me.telemetry),
         }
     }
 
@@ -116,6 +136,11 @@ impl Setting {
         let text = text.trim();
         // A decimal comma is accepted; the values of a line are separated by spaces.
         let number = |word: &str| word.replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite());
+        let on_off = |what: &str| match text {
+            "on" => Ok(true),
+            "off" => Ok(false),
+            _ => Err(format!("{what}: on or off")),
+        };
         let change = match self {
             Setting::Name => match text.len() {
                 1..=31 => Change::Name(text.into()),
@@ -132,6 +157,13 @@ impl Setting {
                 }
             }
             Setting::Lora => {
+                let text = match text.strip_prefix("preset") {
+                    Some(n) => match n.trim().parse::<usize>().ok().and_then(|n| PRESETS.get(n.checked_sub(1)?)) {
+                        Some((_, values)) => values,
+                        None => return Err(format!("Preset: 1 to {}; presets lists them", PRESETS.len())),
+                    },
+                    None => text,
+                };
                 let words: Vec<&str> = text.split_whitespace().collect();
                 let [mhz, khz, sf, cr] = words[..] else {
                     return Err("LoRa: four values, MHz kHz SF CR".into());
@@ -183,100 +215,28 @@ impl Setting {
                 Ok(bytes @ 1..=3) => Change::PathHash(bytes),
                 _ => return Err("Path hash: 1, 2 or 3 bytes".into()),
             },
-            Setting::MapUpload => {
-                return match text {
-                    "yes" => Ok(ToRadio::MapUpload),
-                    _ => Err("Type yes to publish, Esc to cancel".into()),
-                }
-            }
+            Setting::Gps => match me.gps {
+                Some(_) => Change::Gps(on_off("GPS")?),
+                None => return Err("This radio has no GPS setting".into()),
+            },
+            Setting::Share => Change::SharePosition(on_off("Position sharing")?),
+            Setting::Telemetry => Change::Telemetry(on_off("Telemetry")?),
         };
         Ok(ToRadio::Set(change))
     }
 }
 
 impl App {
-    /// My radio's card when its settings can be changed; else the notice says why not.
-    fn settable(&mut self) -> Option<&MyRadio> {
+    /// My radio's card when its settings can be changed; else the console says why not.
+    pub(super) fn settable(&mut self) -> Option<&MyRadio> {
         if !matches!(self.link, Link::Connected(_)) {
-            self.notice = Some("Not connected, settings not changed".into());
+            self.say("ERR  Not connected, settings not changed");
             return None;
         }
         if self.firmware != Firmware::MeshCore {
-            self.notice = Some("Settings are MeshCore only".into());
+            self.say("ERR  Settings are MeshCore only");
             return None;
         }
         self.me.as_ref()
-    }
-
-    /// Open the input line of `setting`, filled with the radio's value.
-    pub(super) fn open_edit(&mut self, setting: Setting) {
-        let pos = self.self_pos;
-        if let Some(value) = self.settable().map(|me| setting.current(me, pos)) {
-            self.edit = value;
-            self.editing = Some(setting);
-        }
-    }
-
-    /// Turn the GPS receiver on or off.
-    pub(super) fn toggle_gps(&mut self) -> Option<ToRadio> {
-        let Some(on) = self.settable()?.gps else {
-            self.notice = Some("This radio has no GPS setting".into());
-            return None;
-        };
-        Some(ToRadio::Set(Change::Gps(!on)))
-    }
-
-    /// Put my position in my adverts, or take it out.
-    pub(super) fn toggle_share(&mut self) -> Option<ToRadio> {
-        let shared = self.settable()?.shares_position;
-        Some(ToRadio::Set(Change::SharePosition(!shared)))
-    }
-
-    /// Let every node read my telemetry, or no one.
-    pub(super) fn toggle_telemetry(&mut self) -> Option<ToRadio> {
-        let on = self.settable()?.telemetry;
-        Some(ToRadio::Set(Change::Telemetry(!on)))
-    }
-
-    /// Fill the LoRa line with the preset `step` places after the one it shows (the first
-    /// or the last when it shows none), and name it.
-    fn move_preset(&mut self, step: isize) {
-        let last = PRESETS.len() - 1;
-        let there = match PRESETS.iter().position(|(_, values)| *values == self.edit) {
-            Some(here) => here.saturating_add_signed(step).min(last),
-            None if step > 0 => 0,
-            None => last,
-        };
-        let (title, values) = PRESETS[there];
-        self.edit = values.into();
-        self.notice = Some(format!("Preset {}/{}: {title}", there + 1, PRESETS.len()));
-    }
-
-    /// A key while a setting is typed. A refused value stays in the line, with the reason.
-    pub(super) fn edit_key(&mut self, setting: Setting, code: KeyCode) -> Option<ToRadio> {
-        match code {
-            KeyCode::Char(c) if self.edit.len() + c.len_utf8() <= MAX_EDIT_BYTES => {
-                self.edit.push(c)
-            }
-            KeyCode::Backspace => {
-                self.edit.pop();
-            }
-            KeyCode::Up if setting == Setting::Lora => self.move_preset(-1),
-            KeyCode::Down if setting == Setting::Lora => self.move_preset(1),
-            KeyCode::Esc => self.editing = None,
-            KeyCode::Enter => {
-                let text = self.edit.clone();
-                let parsed = self.settable().map(|me| setting.parse(&text, me));
-                match parsed? {
-                    Ok(command) => {
-                        self.editing = None;
-                        return Some(command);
-                    }
-                    Err(why) => self.notice = Some(why),
-                }
-            }
-            _ => {}
-        }
-        None
     }
 }

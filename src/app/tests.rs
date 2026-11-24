@@ -618,7 +618,7 @@ fn a_and_f_send_an_advert_from_the_device_tab() {
         flood: false,
         error: Some("timeout".into()),
     });
-    assert_eq!(app.notice.as_deref(), Some("Advert failed: timeout"));
+    assert_eq!(last_line(&app), "ERR  Advert failed: timeout");
     assert_eq!(app.advert.map(|(flood, _)| flood), Some(true), "last one sent");
 }
 
@@ -629,10 +629,10 @@ fn advert_offline_or_on_meshtastic_is_refused() {
     app.tab = Tab::Device;
     app.apply(FromRadio::Firmware(Firmware::Meshtastic));
     assert_eq!(press(&mut app, KeyCode::Char('f')), None);
-    assert_eq!(app.notice.as_deref(), Some("Adverts are MeshCore only"));
+    assert_eq!(last_line(&app), "ERR  Adverts are MeshCore only");
     app.apply(FromRadio::Link(Link::Lost("x".into())));
     assert_eq!(press(&mut app, KeyCode::Char('a')), None);
-    assert_eq!(app.notice.as_deref(), Some("Not connected, advert not sent"));
+    assert_eq!(last_line(&app), "ERR  Not connected, advert not sent");
 }
 
 #[test]
@@ -642,16 +642,13 @@ fn r_reboots_a_connected_meshcore_radio() {
     app.tab = Tab::Device;
     assert_eq!(press(&mut app, KeyCode::Char('r')), Some(ToRadio::Reboot));
     app.apply(FromRadio::RebootFailed("timeout".into()));
-    assert_eq!(app.notice.as_deref(), Some("Reboot failed: timeout"));
+    assert_eq!(last_line(&app), "ERR  Reboot failed: timeout");
     app.apply(FromRadio::Firmware(Firmware::Meshtastic));
     assert_eq!(press(&mut app, KeyCode::Char('r')), None);
-    assert_eq!(app.notice.as_deref(), Some("Reboot is MeshCore only"));
+    assert_eq!(last_line(&app), "ERR  Reboot is MeshCore only");
     app.apply(FromRadio::Link(Link::Lost("x".into())));
     assert_eq!(press(&mut app, KeyCode::Char('r')), None);
-    assert_eq!(
-        app.notice.as_deref(),
-        Some("Not connected, radio not rebooted")
-    );
+    assert_eq!(last_line(&app), "ERR  Not connected, radio not rebooted");
 }
 
 #[test]
@@ -1084,21 +1081,28 @@ fn on_device_tab() -> App {
     app
 }
 
+/// Type a console command, then Enter.
+fn command(app: &mut App, line: &str) -> Option<ToRadio> {
+    type_text(app, line);
+    press(app, KeyCode::Enter)
+}
+
+fn last_line(app: &App) -> &str {
+    app.log.last().map_or("", String::as_str)
+}
+
 #[test]
 fn a_typed_setting_is_checked_then_sent() {
     use crate::radio::Change;
     let mut app = on_device_tab();
-    press(&mut app, KeyCode::Char('l'));
-    assert_eq!(app.edit, "869.618 62.5 8 8", "filled with the radio's values");
+    press(&mut app, KeyCode::Char(':'));
+    assert!(app.console);
     // 'q' and '1' are text here, not quit and tab keys.
-    press(&mut app, KeyCode::Char('q'));
-    assert!(!app.quit);
-    assert_eq!(press(&mut app, KeyCode::Enter), None, "8q is no coding rate");
-    assert_eq!(app.notice.as_deref(), Some("Coding rate: 5 to 8"));
-    assert!(app.editing.is_some(), "the refused value stays in the line");
-    app.edit = "869,525 250 11 5".into();
+    assert_eq!(command(&mut app, "set radio 869.618 62.5 8 8q1"), None);
+    assert!(!app.quit && app.tab == Tab::Device);
+    assert_eq!(last_line(&app), "ERR  Coding rate: 5 to 8");
     assert_eq!(
-        press(&mut app, KeyCode::Enter),
+        command(&mut app, "set radio 869,525 250 11 5"),
         Some(ToRadio::Set(Change::Lora {
             freq_khz: 869_525,
             bw_hz: 250_000,
@@ -1106,11 +1110,51 @@ fn a_typed_setting_is_checked_then_sent() {
             cr: 5
         }))
     );
-    assert_eq!(app.editing, None);
-
-    press(&mut app, KeyCode::Char('n'));
+    app.apply(FromRadio::Done(None));
+    assert_eq!(last_line(&app), "OK");
+    app.apply(FromRadio::Done(Some("the radio refused the value".into())));
+    assert_eq!(last_line(&app), "ERR  the radio refused the value");
+    assert_eq!(command(&mut app, "set colour blue"), None);
+    assert_eq!(last_line(&app), "ERR  Unknown setting; help lists them");
     press(&mut app, KeyCode::Esc);
-    assert_eq!(app.editing, None, "Esc sends nothing");
+    assert!(!app.console, "Esc closes the console");
+}
+
+#[test]
+fn the_console_runs_the_device_commands() {
+    use crate::radio::Change;
+    let mut app = on_device_tab();
+    press(&mut app, KeyCode::Char(':'));
+    assert_eq!(command(&mut app, "set gps off"), Some(ToRadio::Set(Change::Gps(false))));
+    assert_eq!(command(&mut app, "set share on"), Some(ToRadio::Set(Change::SharePosition(true))));
+    assert_eq!(command(&mut app, "advert flood"), Some(ToRadio::Advert { flood: true }));
+    assert_eq!(command(&mut app, "map upload"), Some(ToRadio::MapUpload));
+    assert_eq!(command(&mut app, "reboot"), Some(ToRadio::Reboot));
+    assert_eq!(command(&mut app, "get tx"), None);
+    assert_eq!(last_line(&app), "tx        20");
+    assert_eq!(command(&mut app, "fly"), None);
+    assert_eq!(last_line(&app), "ERR  Unknown command; help lists them");
+    app.apply(FromRadio::Link(Link::Lost("link lost".into())));
+    assert_eq!(command(&mut app, "set gps on"), None);
+    assert_eq!(last_line(&app), "ERR  Not connected, settings not changed");
+    command(&mut app, "clear");
+    assert!(app.log.is_empty());
+}
+
+#[test]
+fn up_and_down_bring_back_the_last_commands() {
+    let mut app = on_device_tab();
+    press(&mut app, KeyCode::Char(':'));
+    command(&mut app, "get tx");
+    command(&mut app, "get name");
+    press(&mut app, KeyCode::Up);
+    assert_eq!(app.command, "get name");
+    press(&mut app, KeyCode::Up);
+    press(&mut app, KeyCode::Up);
+    assert_eq!(app.command, "get tx", "no further back than the first");
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.command, "", "back to an empty line");
 }
 
 #[test]
@@ -1145,47 +1189,28 @@ fn settings_are_refused_out_of_range() {
     assert!(Setting::Region.parse("-fr", &me).is_err());
     assert_eq!(Setting::PathHash.parse("2", &me), set(Change::PathHash(2)));
     assert!(Setting::PathHash.parse("4", &me).is_err());
-    // Publishing on the map takes a typed yes.
-    assert_eq!(Setting::MapUpload.parse("yes", &me), Ok(ToRadio::MapUpload));
-    assert!(Setting::MapUpload.parse("", &me).is_err());
+    assert_eq!(Setting::Telemetry.parse("on", &me), set(Change::Telemetry(true)));
+    assert!(Setting::Share.parse("yes", &me).is_err());
+    assert!(Setting::Gps.parse("on", &me).is_err(), "this radio has no GPS setting");
 }
 
 #[test]
-fn up_and_down_walk_the_lora_presets() {
-    let mut app = on_device_tab();
-    press(&mut app, KeyCode::Char('l'));
-    assert_eq!(app.edit, "869.618 62.5 8 8", "the EU/UK (Narrow) preset");
-    press(&mut app, KeyCode::Down);
-    assert_eq!(app.edit, "869.525 250 11 5");
-    assert_eq!(app.notice.as_deref(), Some("Preset 10/27: EU/UK (Deprecated)"));
-    press(&mut app, KeyCode::Up);
-    assert_eq!(app.edit, "869.618 62.5 8 8");
-    // Every preset is a value the radio would take.
+fn lora_presets_are_values_the_radio_takes() {
+    use crate::radio::Change;
     let me = crate::radio::MyRadio::default();
     for (title, values) in settings::PRESETS {
         assert!(Setting::Lora.parse(values, &me).is_ok(), "{title}");
     }
-}
-
-#[test]
-fn g_and_s_toggle_and_need_a_connected_meshcore_radio() {
-    use crate::radio::Change;
-    let mut app = on_device_tab();
+    assert_eq!(settings::PRESETS[9], ("EU/UK (Deprecated)", "869.525 250 11 5"));
     assert_eq!(
-        press(&mut app, KeyCode::Char('g')),
-        Some(ToRadio::Set(Change::Gps(false)))
+        Setting::Lora.parse("preset 10", &me),
+        Ok(ToRadio::Set(Change::Lora {
+            freq_khz: 869_525,
+            bw_hz: 250_000,
+            sf: 11,
+            cr: 5
+        }))
     );
-    assert_eq!(
-        press(&mut app, KeyCode::Char('s')),
-        Some(ToRadio::Set(Change::SharePosition(true)))
-    );
-    app.apply(FromRadio::Setting(Some("the radio refused the value".into())));
-    assert_eq!(
-        app.notice.as_deref(),
-        Some("Setting not saved: the radio refused the value")
-    );
-    app.apply(FromRadio::Link(Link::Lost("link lost".into())));
-    assert_eq!(press(&mut app, KeyCode::Char('g')), None);
-    press(&mut app, KeyCode::Char('n'));
-    assert_eq!(app.editing, None, "no editing without a link");
+    assert!(Setting::Lora.parse("preset 0", &me).is_err());
+    assert!(Setting::Lora.parse("preset 28", &me).is_err());
 }

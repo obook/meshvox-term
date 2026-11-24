@@ -385,6 +385,20 @@ fn the_tab_bar_names_the_four_tabs_and_counts_unread() {
 }
 
 #[test]
+fn the_device_tab_shows_the_console_under_the_card() {
+    let mut app = radio_app();
+    app.tab = Tab::Device;
+    let s = normal(&app);
+    assert!(s.contains(": commands") && s.contains("Console") && s.contains("help lists them"), "{s}");
+    app.console = true;
+    app.log = vec!["> set tx 40".into(), "ERR  TX power: -9 to 22 dBm".into()];
+    app.command = "set tx 20".into();
+    let s = normal(&app);
+    assert!(s.contains("> set tx 40") && s.contains("ERR  TX power: -9 to 22 dBm"), "{s}");
+    assert!(s.contains("> set tx 20_") && s.contains("Enter run"), "{s}");
+}
+
+#[test]
 fn device_tab_shows_my_radio_or_waits_for_it() {
     let mut app = radio_app();
     app.tab = Tab::Device;

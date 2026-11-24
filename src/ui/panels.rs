@@ -137,18 +137,22 @@ fn keys(app: &App) -> Vec<(&'static str, &'static str, &'static str)> {
             ("Enter", "pair", "BOND"),
             ("Esc", "cancel", "ABORT"),
         ],
-        (Tab::Device, _) if app.editing.is_some() => {
-            vec![("Enter", "save", "WRITE"), ("Esc", "cancel", "ABORT")]
-        }
+        (Tab::Device, _) if app.console => vec![
+            ("Enter", "run", "EXEC"),
+            (arrows, "last commands", "HISTORY"),
+            ("PgUp/PgDn", "scroll", "SCROLL"),
+            ("Esc", "close", "ABORT"),
+        ],
         (Tab::Device, _) if app.firmware == Firmware::MeshCore => vec![
+            (":", "commands", "CONSOLE"),
             ("a", "advert to neighbours", "ADVERT ZERO-HOP"),
             ("f", "advert to all", "ADVERT FLOOD"),
             ("p", "pair", "PAIR"),
             ("r", "reboot", "REBOOT"),
         ],
-        (Tab::Device, _) => vec![("p", "pair", "PAIR")],
+        (Tab::Device, _) => vec![(":", "commands", "CONSOLE"), ("p", "pair", "PAIR")],
     };
-    if !app.typing && app.editing.is_none() && !matches!(app.pairing, Some(Pairing::Pin(_))) {
+    if !app.typing && !app.console && !matches!(app.pairing, Some(Pairing::Pin(_))) {
         keys.extend([("1-4", "tabs", "TABS"), ("q", "quit", "EXIT")]);
     }
     keys

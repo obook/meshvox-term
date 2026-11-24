@@ -9,8 +9,8 @@
 use ratatui::text::Line;
 
 use super::card::field;
-use super::format::{coord, hhmm, khz, uptime, LOW_BATTERY};
-use super::{alert, faint, text, Theme};
+use super::format::{ascii_safe, coord, hhmm, khz, uptime, LOW_BATTERY};
+use super::{alert, faint, strong, text, Theme};
 use crate::app::App;
 use crate::radio::{Firmware, Link, MyRadio, Pairing};
 
@@ -139,28 +139,26 @@ pub(super) fn radio_lines<'a>(app: &App, radio: &MyRadio, theme: Theme) -> Vec<L
     lines
 }
 
-/// The setting being typed: its value so far, what to type and the keys, in the alert color
-/// like the PIN.
-pub(super) fn editing_lines<'a>(app: &App, theme: Theme) -> Vec<Line<'a>> {
-    let Some(setting) = app.editing else {
-        // The setting keys: the footer has no room for them on 80 columns.
-        let settable = app.me.is_some() && app.firmware == Firmware::MeshCore;
-        return match settable {
-            true => vec![
-                Line::default(),
-                field(theme, "SET", "n name   t TX   l LoRa   e region   h path hash".into(), faint(theme)),
-                field(theme, "", "o position   g GPS   s share position   m telemetry".into(), faint(theme)),
-                field(theme, "", "u publish on map.meshcore.io".into(), faint(theme)),
-            ],
-            false => vec![],
+/// The console's panel: the last of its lines that fit in `rows` (PageUp scrolls back), then
+/// the command line while it is open, in the alert color like the PIN.
+pub(super) fn console_lines<'a>(app: &App, theme: Theme, rows: usize) -> Vec<Line<'a>> {
+    if app.log.is_empty() && !app.console {
+        return vec![Line::styled(": type a command; help lists them", faint(theme))];
+    }
+    let shown = rows.saturating_sub(usize::from(app.console));
+    let end = app.log.len().saturating_sub(app.log_scroll);
+    let mut lines: Vec<Line> = app.log[end.saturating_sub(shown)..end].iter().map(|line| {
+        let style = match line {
+            l if l.starts_with("ERR") => alert(theme),
+            l if l.starts_with('>') => strong(theme),
+            _ => text(theme),
         };
-    };
-    vec![
-        Line::default(),
-        field(theme, setting.label(), format!("> {}_", app.edit), alert(theme)),
-        field(theme, "", setting.hint().into(), faint(theme)),
-        field(theme, "", "Enter: save   Esc: cancel".into(), faint(theme)),
-    ]
+        Line::styled(ascii_safe(line, app.ascii).into_owned(), style)
+    }).collect();
+    if app.console {
+        lines.push(Line::styled(format!("> {}_", app.command), alert(theme)));
+    }
+    lines
 }
 
 /// Where the pairing stands. When it asks for the PIN: what to type, where to read it and

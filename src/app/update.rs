@@ -63,23 +63,22 @@ impl App {
                     // The PIN is typed in the Device tab, whatever was open.
                     self.pin.clear();
                     self.typing = false;
-                    self.editing = None;
+                    self.console = false;
                     self.tab = Tab::Device;
                 }
                 self.pairing = Some(state);
             }
             FromRadio::Advert { flood, error: None } => {
-                self.advert = Some((flood, chrono::Utc::now().timestamp()))
+                self.advert = Some((flood, chrono::Utc::now().timestamp()));
+                self.say(if flood { "OK   advert sent to all" } else { "OK   advert sent to neighbours" });
             }
             FromRadio::Advert {
                 error: Some(error), ..
-            } => self.notice = Some(format!("Advert failed: {error}")),
-            FromRadio::RebootFailed(error) => self.notice = Some(format!("Reboot failed: {error}")),
+            } => self.say(format!("ERR  Advert failed: {error}")),
+            FromRadio::RebootFailed(error) => self.say(format!("ERR  Reboot failed: {error}")),
             FromRadio::Notice(text) => self.notice = Some(text),
-            FromRadio::Setting(None) => self.notice = Some("Setting saved".into()),
-            FromRadio::Setting(Some(error)) => {
-                self.notice = Some(format!("Setting not saved: {error}"))
-            }
+            FromRadio::Done(None) => self.say("OK"),
+            FromRadio::Done(Some(error)) => self.say(format!("ERR  {error}")),
             FromRadio::SendFailed {
                 conv: failed,
                 text,

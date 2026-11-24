@@ -7,6 +7,7 @@
 //! Date: October 2026
 //! Licence: GPL-3.0
 
+mod console;
 mod keys;
 mod settings;
 #[cfg(test)]
@@ -97,9 +98,16 @@ pub struct App {
     pub pairing: Option<Pairing>,
     /// The PIN typed while the pairing asks for it.
     pub pin: String,
-    /// The setting typed in the Device tab, and its value so far.
-    pub editing: Option<Setting>,
-    pub edit: String,
+    /// The console of the Device tab is open: keys go to its command line.
+    pub console: bool,
+    /// The command being typed.
+    pub command: String,
+    /// What the console shows: each command ("> " first) and its answer ("OK", "ERR ...").
+    pub log: Vec<String>,
+    /// How many commands back Up went; 0: the line being typed.
+    pub recall: usize,
+    /// Console lines scrolled back by PageUp.
+    pub log_scroll: usize,
     pub unread: HashMap<String, usize>,
     pub tab: Tab,
     /// Key of the conversation open in the Chats tab.
@@ -151,8 +159,11 @@ impl App {
             sweep: false,
             pairing: None,
             pin: String::new(),
-            editing: None,
-            edit: String::new(),
+            console: false,
+            command: String::new(),
+            log: vec![],
+            recall: 0,
+            log_scroll: 0,
             unread: HashMap::new(),
             tab: Tab::Chats,
             chat: PUBLIC.into(),

@@ -9,7 +9,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{kind_label, App, Filter, Ping, Setting, Tab, MY_RADIO};
+use super::{kind_label, App, Filter, Ping, Tab, MY_RADIO};
 use crate::config::{MAX_TEXT_BYTES, SCROLL_STEP};
 use crate::map::MapView;
 use crate::radio::{Firmware, Link, NodeKind, Pairing, ToRadio};
@@ -25,8 +25,8 @@ impl App {
         if let Some(Pairing::Pin(_)) = self.pairing {
             return self.pin_key(key.code);
         }
-        if let Some(setting) = self.editing {
-            return self.edit_key(setting, key.code);
+        if self.console {
+            return self.console_key(key.code);
         }
         if self.typing {
             return self.type_key(key.code);
@@ -60,16 +60,7 @@ impl App {
             (Tab::Device, KeyCode::Char('f')) => return self.advert(true),
             (Tab::Device, KeyCode::Char('p')) => return self.pair(),
             (Tab::Device, KeyCode::Char('r')) => return self.reboot(),
-            (Tab::Device, KeyCode::Char('n')) => self.open_edit(Setting::Name),
-            (Tab::Device, KeyCode::Char('t')) => self.open_edit(Setting::TxPower),
-            (Tab::Device, KeyCode::Char('l')) => self.open_edit(Setting::Lora),
-            (Tab::Device, KeyCode::Char('o')) => self.open_edit(Setting::Position),
-            (Tab::Device, KeyCode::Char('e')) => self.open_edit(Setting::Region),
-            (Tab::Device, KeyCode::Char('h')) => self.open_edit(Setting::PathHash),
-            (Tab::Device, KeyCode::Char('u')) => self.open_edit(Setting::MapUpload),
-            (Tab::Device, KeyCode::Char('g')) => return self.toggle_gps(),
-            (Tab::Device, KeyCode::Char('s')) => return self.toggle_share(),
-            (Tab::Device, KeyCode::Char('m')) => return self.toggle_telemetry(),
+            (Tab::Device, KeyCode::Char(':')) => self.console = true,
             _ => {}
         }
         None
@@ -115,7 +106,7 @@ impl App {
     }
 
     /// Pair the radio again: its old bond is removed, then BlueZ asks for its PIN.
-    fn pair(&mut self) -> Option<ToRadio> {
+    pub(super) fn pair(&mut self) -> Option<ToRadio> {
         if matches!(self.pairing, Some(Pairing::Running)) {
             self.notice = Some("Pairing already running".into());
             return None;
@@ -244,13 +235,13 @@ impl App {
     }
 
     /// Advert of my radio, to the neighbours only or to the whole network (flood).
-    fn advert(&mut self, flood: bool) -> Option<ToRadio> {
+    pub(super) fn advert(&mut self, flood: bool) -> Option<ToRadio> {
         if !matches!(self.link, Link::Connected(_)) {
-            self.notice = Some("Not connected, advert not sent".into());
+            self.say("ERR  Not connected, advert not sent");
             return None;
         }
         if self.firmware != Firmware::MeshCore {
-            self.notice = Some("Adverts are MeshCore only".into());
+            self.say("ERR  Adverts are MeshCore only");
             return None;
         }
         Some(ToRadio::Advert { flood })
@@ -266,16 +257,16 @@ impl App {
         Some(ToRadio::Refresh)
     }
 
-    fn reboot(&mut self) -> Option<ToRadio> {
+    pub(super) fn reboot(&mut self) -> Option<ToRadio> {
         if !matches!(self.link, Link::Connected(_)) {
-            self.notice = Some("Not connected, radio not rebooted".into());
+            self.say("ERR  Not connected, radio not rebooted");
             return None;
         }
         if self.firmware != Firmware::MeshCore {
-            self.notice = Some("Reboot is MeshCore only".into());
+            self.say("ERR  Reboot is MeshCore only");
             return None;
         }
-        self.notice = Some("Rebooting the radio".into());
+        self.say("Rebooting the radio; the link comes back on its own");
         Some(ToRadio::Reboot)
     }
 

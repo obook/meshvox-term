@@ -36,7 +36,7 @@ use map_panel::draw_map;
 pub use map_panel::MapState;
 pub use menu::{draw_boot, draw_menu, menu_key, Menu, BOOT};
 use panels::{draw_footer, draw_header};
-use radio_card::{editing_lines, pairing_lines, radio_lines};
+use radio_card::{console_lines, pairing_lines, radio_lines};
 
 const GREEN: Color = Color::Rgb(0, 255, 65);
 const DIM: Color = Color::Rgb(0, 140, 40);
@@ -174,7 +174,7 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
     frame.render_widget(tabs, area);
 }
 
-/// The Device tab: my radio's card, or why there is none yet.
+/// The Device tab: my radio's card, or why there is none yet, and the console under it.
 fn draw_device(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
     let (title, mut lines) = match &app.me {
         Some(radio) => (
@@ -193,11 +193,24 @@ fn draw_device(frame: &mut Frame, app: &App, area: Rect, theme: Theme) {
         ),
     };
     lines.extend(pairing_lines(app, theme));
-    lines.extend(editing_lines(app, theme));
+    // The card keeps its height; the console takes the rest, and keeps its command line on a
+    // short terminal.
+    let card_rows = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
+    let [card, console] = Layout::vertical([Constraint::Length(card_rows), Constraint::Min(3)]).areas(area);
     frame.render_widget(
         Paragraph::new(lines)
             .style(text(theme))
-            .block(panel(theme, app.ascii, true, &title)),
-        area,
+            .block(panel(theme, app.ascii, !app.console, &title)),
+        card,
+    );
+    let title = match theme {
+        Theme::Normal => "Console",
+        Theme::Hacker => "CONSOLE",
+    };
+    frame.render_widget(
+        Paragraph::new(console_lines(app, theme, usize::from(console.height.saturating_sub(2))))
+            .style(text(theme))
+            .block(panel(theme, app.ascii, app.console, title)),
+        console,
     );
 }

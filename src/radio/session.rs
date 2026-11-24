@@ -340,7 +340,7 @@ pub(super) async fn send(
         ToRadio::Ping { .. } | ToRadio::Refresh | ToRadio::Pair | ToRadio::Pin(_) => return Ok(()),
         ToRadio::Set(change) => {
             set(radio, change).await?;
-            let _ = tx.send(FromRadio::Setting(None));
+            let _ = tx.send(FromRadio::Done(None));
             let (card, pos) = read_card(radio).await?;
             let _ = tx.send(FromRadio::MyRadio(card));
             let _ = tx.send(FromRadio::SelfPos(pos));
@@ -348,7 +348,7 @@ pub(super) async fn send(
         }
         ToRadio::MapUpload => {
             map_upload(radio).await?;
-            let _ = tx.send(FromRadio::Notice("Published on map.meshcore.io".into()));
+            let _ = tx.send(FromRadio::Done(None));
             return Ok(());
         }
         ToRadio::Reboot => {

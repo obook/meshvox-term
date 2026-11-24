@@ -101,8 +101,8 @@ pub enum FromRadio {
     Pairing(Pairing),
     /// The reboot command could not be sent.
     RebootFailed(String),
-    /// A setting was saved, or not (the error).
-    Setting(Option<String>),
+    /// A setting or the map upload was taken by the radio, or not (the error).
+    Done(Option<String>),
     /// A line for the user: how a command of theirs ended.
     Notice(String),
 }
@@ -212,9 +212,8 @@ impl ToRadio {
                 }
             }
             ToRadio::Reboot => return FromRadio::RebootFailed(error),
-            ToRadio::Set(_) => return FromRadio::Setting(Some(error)),
+            ToRadio::Set(_) | ToRadio::MapUpload => return FromRadio::Done(Some(error)),
             ToRadio::Refresh => return FromRadio::Notice(format!("Refresh failed: {error}")),
-            ToRadio::MapUpload => return FromRadio::Notice(format!("Map upload failed: {error}")),
             ToRadio::Pair | ToRadio::Pin(_) => return FromRadio::Pairing(Pairing::Failed(error)),
         };
         FromRadio::SendFailed { conv, text, error }
