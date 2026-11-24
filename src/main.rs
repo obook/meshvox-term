@@ -1,5 +1,5 @@
 //! main.rs
-//! meshvox-term: terminal client for a MeshCore or Meshtastic radio over Bluetooth.
+//! meshvox-term: terminal client for MeshCore companion and Meshtastic radios.
 //! This file reads the command line, sets up the log and the single-instance lock, then runs
 //! either the probe or the interface:
 //!   app/ (state and keys), radio/ (the BLE link, in a tokio task), ui/ (drawing),

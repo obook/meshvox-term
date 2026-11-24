@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 license = "GPL-3.0-only"
 authors = ["Olivier Booklage <olivier.booklage@ac-bordeaux.fr>"]
-description = "Terminal client for a MeshCore or Meshtastic radio over Bluetooth"
+description = "Terminal client for MeshCore companion and Meshtastic radios"
 
 [dependencies]
 anyhow = "1"

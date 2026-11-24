@@ -91,7 +91,7 @@ pub(super) fn draw_header(frame: &mut Frame, app: &App, area: Rect, theme: Theme
             theme,
             app.ascii,
             false,
-            "meshvox-term  MeshCore and Meshtastic over Bluetooth",
+            "meshvox-term  for MeshCore companion and Meshtastic radios",
         ),
         Theme::Hacker => {
             let clock = chrono::Local::now().format(" %H:%M:%S ").to_string();
