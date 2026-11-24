@@ -7,7 +7,7 @@
 //! Licence: GPL-3.0
 
 use chrono::TimeZone;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 pub(super) use crate::config::LOW_BATTERY;
 use crate::radio::NodeKind;
@@ -31,17 +31,17 @@ pub(super) fn short(detail: &str) -> String {
 
 /// `s` cut and padded to exactly `width` terminal cells (an emoji takes two).
 pub(super) fn cells(s: &str, width: usize) -> String {
-    let mut out = String::new();
-    let mut used = 0;
-    for c in s.chars() {
-        let w = c.width().unwrap_or(0);
-        if used + w > width {
+    // The width of the whole start, not a sum per character: an emoji followed by U+FE0F
+    // takes two cells, as the terminal draws it.
+    let mut end = 0;
+    for (i, c) in s.char_indices() {
+        if s[..i + c.len_utf8()].width() > width {
             break;
         }
-        out.push(c);
-        used += w;
+        end = i + c.len_utf8();
     }
-    out + &" ".repeat(width - used)
+    let out = &s[..end];
+    format!("{out}{}", " ".repeat(width - out.width()))
 }
 
 /// First 6 hex digits of a contact's key, the node ID shown in the list.

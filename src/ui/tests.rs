@@ -455,6 +455,15 @@ fn device_tab_shows_my_radio_or_waits_for_it() {
 }
 
 #[test]
+fn cells_counts_an_emoji_with_its_variation_selector_as_two() {
+    use unicode_width::UnicodeWidthStr;
+    // As the terminal draws them: U+FE0F makes these two emoji two cells wide.
+    for name in ["64-\u{2694}\u{FE0F}Chevalier", "\u{1F6F0}\u{FE0F} LANTEGIA-6", "Dagobert64\u{1F537}"] {
+        assert_eq!(cells(name, 14).width(), 14, "{name}");
+    }
+}
+
+#[test]
 fn card_helpers() {
     assert_eq!(
         [age(30), age(300), age(3 * 3600 + 5), age(2 * 86400)],
