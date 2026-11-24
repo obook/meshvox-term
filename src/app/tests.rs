@@ -165,7 +165,7 @@ fn distance_or_dash() {
             }),
         ),
     ]));
-    assert_eq!(app.rows()[0].detail, "-");
+    assert_eq!(app.rows()[0].detail, "", "no distance without my position");
     app.apply(FromRadio::SelfPos(Some(Pos {
         lat: 44.8,
         lon: -0.6,

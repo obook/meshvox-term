@@ -244,7 +244,8 @@ impl App {
         for n in nodes {
             let detail = match (n.kind, self.self_pos, n.pos) {
                 (NodeKind::Chat, Some(a), Some(b)) => format_distance(distance_km(a, b)),
-                (NodeKind::Chat, _, _) => "-".into(),
+                // Unknown distance: left blank.
+                (NodeKind::Chat, _, _) => String::new(),
                 (kind, _, _) => kind_label(kind).into(),
             };
             rows.push(Row {
