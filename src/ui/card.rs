@@ -13,7 +13,7 @@ use ratatui::Frame;
 use super::format::{age, ascii_safe, coord, hhmm, kind_name, route, spinner, uptime};
 use super::radio_card::radio_lines;
 use super::{alert, faint, panel, strong, text, Theme};
-use crate::app::{App, Ping, MY_RADIO};
+use crate::app::{App, Delivery, Ping, MY_RADIO};
 use crate::geo::{bearing_deg, cardinal, distance_km, format_distance};
 use crate::history::Msg;
 use crate::radio::{Firmware, Node, NodeKind};
@@ -93,7 +93,7 @@ pub(super) fn node_lines<'a>(app: &App, node: &Node, theme: Theme) -> Vec<Line<'
             .msgs
             .iter()
             .rev()
-            .find(|m| m.conv == node.prefix && app.status(m) == Some("received"));
+            .find(|m| m.conv == node.prefix && app.status(m) == Some(Delivery::Received));
         lines.push(field(
             theme,
             "ACK",

@@ -13,20 +13,24 @@ use ratatui::Frame;
 
 use super::format::{ascii_safe, hhmm};
 use super::{faint, panel, strong, text, Theme, CYAN};
-use crate::app::App;
+use crate::app::{App, Delivery};
 use crate::history::Msg;
-use crate::radio::Link;
+use crate::tiles::name_color;
 
-/// My handle in the thread: the node name inside the BLE name "MeshCore-<name>".
+/// My handle in the thread: my radio's node name. Not the link's name, which is the serial
+/// port over USB.
 pub(super) fn my_handle(app: &App) -> String {
-    match &app.link {
-        Link::Connected(name) => name.strip_prefix("MeshCore-").unwrap_or(name).to_string(),
-        _ => "me".into(),
-    }
+    app.me.as_ref().map_or_else(|| "me".into(), |me| me.name.clone())
 }
 
-/// One message of the thread: time, sender and text, plus the delivery state of a direct
-/// message I sent.
+/// The color of a sender's marker on the map, so its name stands out from the text.
+fn sender_color(name: &str) -> Color {
+    let [r, g, b, _] = name_color(name).0;
+    Color::Rgb(r, g, b)
+}
+
+/// One message of the thread: time, sender and text, plus how far a message I sent went:
+/// one tick when sent, two when received or repeated (with the count), as in MeshVox.
 pub(super) fn thread_line<'a>(
     app: &App,
     msg: &'a Msg,
@@ -44,7 +48,7 @@ pub(super) fn thread_line<'a>(
             Span::styled(
                 format!("{from}  "),
                 Style::new()
-                    .fg(if msg.outgoing { CYAN } else { Color::White })
+                    .fg(if msg.outgoing { CYAN } else { sender_color(&msg.from) })
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(body),
@@ -56,26 +60,31 @@ pub(super) fn thread_line<'a>(
         ]),
     };
     if let Some(status) = app.status(msg) {
-        let received = status == "received";
-        let tag = match theme {
-            Theme::Normal => status,
-            Theme::Hacker if received => "[ACK]",
-            Theme::Hacker => "[TX]",
+        let tick = if app.ascii { "v" } else { "\u{2713}" };
+        let tag = match (theme, status) {
+            (Theme::Normal, Delivery::Sent) => tick.to_string(),
+            (Theme::Normal, Delivery::Received) => tick.repeat(2),
+            (Theme::Normal, Delivery::Repeated(n)) => format!("{} {n}", tick.repeat(2)),
+            (Theme::Hacker, Delivery::Sent) => "[TX]".into(),
+            (Theme::Hacker, Delivery::Received) => "[ACK]".into(),
+            (Theme::Hacker, Delivery::Repeated(n)) => format!("[RPT {n}]"),
         };
-        // Right-aligned when it fits on the row, else after the text (wrapped with it).
-        let pad = width
-            .checked_sub(line.width() + tag.len())
-            .filter(|&p| p >= 2)
-            .unwrap_or(2);
-        line.push_span(Span::raw(" ".repeat(pad)));
-        line.push_span(Span::styled(
-            tag,
-            if received && theme == Theme::Hacker {
-                strong(theme)
-            } else {
-                faint(theme)
-            },
-        ));
+        let style = match (theme, status) {
+            (_, Delivery::Sent) => faint(theme),
+            (Theme::Normal, _) => Style::new().fg(CYAN).add_modifier(Modifier::BOLD),
+            (Theme::Hacker, _) => strong(theme),
+        };
+        // After the text, the whole line being right-aligned.
+        line.push_span(Span::raw("  "));
+        line.push_span(Span::styled(tag, style));
+    }
+    // Mine on the right, as in a phone's messaging app, its time (the first span) kept on
+    // the left; the whole line on the right when it wraps.
+    if msg.outgoing {
+        match width.checked_sub(line.width()) {
+            Some(pad) => line.spans.insert(1, Span::raw(" ".repeat(pad))),
+            None => line = line.right_aligned(),
+        }
     }
     line
 }

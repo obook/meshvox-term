@@ -41,9 +41,11 @@ impl App {
             FromRadio::SelfPos(pos) => self.self_pos = pos,
             FromRadio::Battery(b) => self.battery = Some(b),
             FromRadio::Nodes(nodes) => self.nodes = nodes,
+            FromRadio::Channels(names) => self.channels = names,
             FromRadio::Record(Record::Ack { tag }) => {
                 self.acked.insert(tag);
             }
+            FromRadio::Record(Record::Repeat { tag }) => *self.repeats.entry(tag).or_default() += 1,
             FromRadio::Record(Record::Msg(msg)) => {
                 let on_screen = self.tab == Tab::Chats && msg.conv == self.chat;
                 if !msg.outgoing && !on_screen {

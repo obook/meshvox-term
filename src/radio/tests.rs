@@ -80,6 +80,39 @@ fn other_channels_are_kept_apart() {
     assert_eq!(m.conv, "channel:1");
 }
 
+/// A channel packet as the radio hears it: channel hash, MAC (not checked), AES-128 blocks of
+/// the timestamp, the text type and the zero-padded text.
+fn group_packet(secret: &[u8; 16], ts: u32, text: &str) -> Vec<u8> {
+    use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+    use sha2::{Digest, Sha256};
+    let mut plain = ts.to_le_bytes().to_vec();
+    plain.push(0);
+    plain.extend_from_slice(text.as_bytes());
+    plain.resize(plain.len().div_ceil(16) * 16, 0);
+    let cipher = aes::Aes128::new(GenericArray::from_slice(secret));
+    for block in plain.chunks_exact_mut(16) {
+        cipher.encrypt_block(GenericArray::from_mut_slice(block));
+    }
+    let mut packet = vec![Sha256::digest(secret)[0], 0xAA, 0xBB];
+    packet.extend(plain);
+    packet
+}
+
+#[test]
+fn a_heard_channel_packet_is_read_with_its_channel_secret() {
+    // The public channel's well-known secret.
+    let public: [u8; 16] = [
+        0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a, 0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd, 0x72,
+    ];
+    let packet = group_packet(&public, 1_700_000_000, "bbok: hello, a text longer than a block");
+    assert_eq!(
+        group_text(&packet, &public),
+        Some((1_700_000_000, "bbok: hello, a text longer than a block".into()))
+    );
+    assert_eq!(group_text(&packet, &[7; 16]), None, "another channel's secret");
+    assert_eq!(group_text(&packet[..20], &public), None, "not whole blocks");
+}
+
 #[test]
 fn direct_message_uses_known_name() {
     let names = HashMap::from([("a4cb8fcbd941".to_string(), "Bob".to_string())]);
@@ -120,7 +153,7 @@ fn failed_send_names_its_conversation() {
         FromRadio::SendFailed { conv, text, error }
             if conv == "a4cb8fcbd941" && text == "hi" && error == "timeout"
     ));
-    let public = ToRadio::SendPublic { text: "yo".into() }.failed("x".into());
+    let public = ToRadio::SendChannel { channel: 0, text: "yo".into() }.failed("x".into());
     assert!(
         matches!(public, FromRadio::SendFailed { conv, text, .. } if conv == PUBLIC && text == "yo")
     );

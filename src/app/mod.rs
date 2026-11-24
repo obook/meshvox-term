@@ -25,6 +25,17 @@ use crate::map::MapView;
 pub use crate::radio::Ping;
 use crate::radio::{Battery, Firmware, Link, MyRadio, Node, NodeKind, Pairing};
 
+/// How far a message I sent went, as MeshVox shows it with ticks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Delivery {
+    /// The radio sent it.
+    Sent,
+    /// The destination acknowledged it (a direct message).
+    Received,
+    /// My radio heard repeaters relay it this many times (a channel message).
+    Repeated(u32),
+}
+
 /// Conversation key of the row for my own radio.
 pub const MY_RADIO: &str = "radio";
 
@@ -86,8 +97,12 @@ pub struct App {
     /// When the current link came up.
     pub connected_since: Option<std::time::Instant>,
     pub nodes: Vec<Node>,
+    /// The names of the radio's channels, by conversation key.
+    pub channels: HashMap<String, String>,
     pub msgs: Vec<Msg>,
     pub acked: HashSet<String>,
+    /// Times my radio heard a repeater relay each of my channel messages, by tag.
+    pub repeats: HashMap<String, u32>,
     /// Last ping of each node, by prefix.
     pub pings: HashMap<String, Ping>,
     /// The last advert my radio took this session: to the whole network or not, and when.
@@ -152,8 +167,10 @@ impl App {
             me: None,
             connected_since: None,
             nodes: vec![],
+            channels: HashMap::new(),
             msgs: vec![],
             acked: HashSet::new(),
+            repeats: HashMap::new(),
             pings: HashMap::new(),
             advert: None,
             sweep: false,
@@ -181,7 +198,7 @@ impl App {
         };
         let last_key = history.last().map(|rec| match rec {
             Record::Msg(m) => m.conv.as_str(),
-            Record::Ack { tag } => tag.as_str(),
+            Record::Ack { tag } | Record::Repeat { tag } => tag.as_str(),
         });
         if last_key.is_some_and(is_meshtastic) {
             app.firmware = Firmware::Meshtastic;
@@ -193,6 +210,7 @@ impl App {
                 Record::Ack { tag } => {
                     app.acked.insert(tag);
                 }
+                Record::Repeat { tag } => *app.repeats.entry(tag).or_default() += 1,
             }
         }
         app
@@ -282,10 +300,14 @@ impl App {
             .any(|n| n.prefix == conv && n.heard != 0 && now - i64::from(n.heard) < ONLINE_SECS)
     }
 
-    /// "# Public", the node's name, or the conversation key when the node is unknown.
+    /// "# Public", "# " and the channel's name, the node's name, or the conversation key when
+    /// the node or the channel's name is unknown.
     pub fn conv_label(&self, conv: &str) -> String {
         if conv == self.public_conv() {
             return "# Public".into();
+        }
+        if let Some(name) = self.channels.get(conv) {
+            return format!("# {}", name.trim_start_matches('#'));
         }
         self.nodes
             .iter()
@@ -310,13 +332,14 @@ impl App {
         self.msgs.iter().filter(|m| m.conv == self.chat).collect()
     }
 
-    /// "sent" or "received" for a direct message we sent; nothing otherwise.
-    pub fn status(&self, m: &Msg) -> Option<&'static str> {
+    /// How far a message I sent went; None for someone else's, or one I cannot follow (a
+    /// Meshtastic channel message).
+    pub fn status(&self, m: &Msg) -> Option<Delivery> {
         let tag = m.ack.as_ref().filter(|_| m.outgoing)?;
-        Some(if self.acked.contains(tag) {
-            "received"
-        } else {
-            "sent"
+        Some(match self.repeats.get(tag) {
+            Some(&n) => Delivery::Repeated(n),
+            None if self.acked.contains(tag) => Delivery::Received,
+            None => Delivery::Sent,
         })
     }
 }

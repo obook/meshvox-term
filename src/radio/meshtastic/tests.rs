@@ -296,7 +296,7 @@ fn another_config_id_does_not_end_the_handshake() {
 
 #[test]
 fn a_failed_public_send_goes_back_to_the_meshtastic_channel() {
-    let cmd = ToRadio::SendPublic { text: "hi".into() };
+    let cmd = ToRadio::SendChannel { channel: 0, text: "hi".into() };
     let FromRadio::SendFailed { conv, text, .. } = failed(&cmd, "busy".into()) else {
         panic!("not a send failure");
     };

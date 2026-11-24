@@ -129,8 +129,11 @@ fn lines_look_like_irc() {
 
 #[test]
 fn my_messages_carry_my_node_name() {
-    let mut app = App::new("x", vec![Record::Msg(sent("hello"))]);
-    app.apply(FromRadio::Link(Link::Connected("MeshCore-bbok".into())));
+    // Over USB the link is named after the port: the name comes from the radio.
+    let mut app = radio_app();
+    app.apply(FromRadio::Link(Link::Connected("/dev/ttyACM0".into())));
+    app.apply(FromRadio::Record(Record::Msg(sent("hello"))));
+    app.tab = Tab::Chats;
     app.chat = "a4cb8fcbd941".into();
     assert!(screen(&app).contains("<bbok> hello"));
 }
@@ -157,6 +160,34 @@ fn older_messages_are_reachable_by_scrolling() {
         app.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
     }
     assert!(screen(&app).contains("<Bob> msg40"));
+}
+
+#[test]
+fn a_sender_name_has_the_color_of_its_map_marker() {
+    let app = App::new("x", vec![]);
+    let from = |from: &str, outgoing: bool| Msg { from: from.into(), outgoing, ack: None, ..sent("hi") };
+    let name_fg = |msg: &Msg, theme| {
+        let line = conversation::thread_line(&app, msg, "bbok", 80, theme);
+        let name = if msg.outgoing { "bbok" } else { msg.from.as_str() };
+        line.spans.iter().find(|s| s.content.contains(name)).and_then(|s| s.style.fg)
+    };
+    // The tiles test pins name_color("Alice") to this RGB.
+    assert_eq!(name_fg(&from("Alice", false), Theme::Normal), Some(Color::Rgb(51, 204, 110)));
+    assert_eq!(name_fg(&from("me", true), Theme::Normal), Some(CYAN), "mine");
+    assert_eq!(name_fg(&from("Alice", false), Theme::Hacker), strong(Theme::Hacker).fg, "all green");
+}
+
+#[test]
+fn my_messages_are_right_aligned() {
+    let mut app = App::new("x", vec![public("bonjour"), Record::Msg(Msg { conv: "public".into(), ack: None, ..sent("hello") })]);
+    app.chat = "public".into();
+    for s in [normal(&app), screen(&app)] {
+        // My text ends against the right border, the other's does not; my time stays on the left.
+        let at_right = |text: &str| s.lines().find(|l| l.trim_end_matches(['│', '|']).ends_with(text));
+        let mine = at_right("hello").unwrap_or_else(|| panic!("{s}"));
+        assert!(mine.contains("│01:00 ") || mine.contains("│[01:00] "), "{s}");
+        assert!(at_right("bonjour").is_none(), "{s}");
+    }
 }
 
 #[test]
@@ -471,8 +502,7 @@ fn normal_thread_and_prompt() {
     app.chat = "a4cb8fcbd941".into();
     let s = normal(&app);
     assert!(
-        s.contains("me  hello")
-            && s.contains("sent")
+        s.contains("me  hello  \u{2713}")
             && s.contains("> ")
             && !s.contains("root@mesh"),
         "{s}"
@@ -480,7 +510,7 @@ fn normal_thread_and_prompt() {
     app.apply(FromRadio::Record(Record::Ack {
         tag: "01020304".into(),
     }));
-    assert!(normal(&app).contains("received"));
+    assert!(normal(&app).contains("hello  \u{2713}\u{2713}"));
 }
 
 #[test]

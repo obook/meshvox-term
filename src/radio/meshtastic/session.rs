@@ -153,7 +153,7 @@ impl PacketIds {
 /// A send that did not go out; a public one goes back to the Meshtastic channel.
 pub(in crate::radio) fn failed(cmd: &ToRadio, error: String) -> FromRadio {
     match cmd {
-        ToRadio::SendPublic { text } => FromRadio::SendFailed {
+        ToRadio::SendChannel { text, .. } => FromRadio::SendFailed {
             conv: MT_PUBLIC.into(),
             text: text.clone(),
             error,
@@ -398,7 +398,8 @@ impl Live {
                 self.sent.insert(id, to);
                 save(history, tx, outgoing(prefix, text, Some(ack_tag(id))))
             }
-            ToRadio::SendPublic { text } => {
+            // The app sends only on the first channel of a Meshtastic radio.
+            ToRadio::SendChannel { text, .. } => {
                 let bytes = text.as_bytes().to_vec();
                 let id = ids.next();
                 t.send(&packet(

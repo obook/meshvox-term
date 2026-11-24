@@ -280,8 +280,8 @@ impl App {
         if self.is_mine(conv) {
             return Some("That is your own radio".into());
         }
-        if conv.contains("channel:") {
-            return Some("Messages to private channels are not supported".into());
+        if conv.starts_with("mt:channel:") {
+            return Some("Messages to Meshtastic private channels are not supported".into());
         }
         // Meshtastic routers take direct messages; MeshCore repeaters and rooms do not.
         self.nodes
@@ -307,10 +307,12 @@ impl App {
         }
         let text = std::mem::take(&mut self.input);
         self.scroll = 0;
-        Some(if conv == self.public_conv() {
-            ToRadio::SendPublic { text }
-        } else {
-            ToRadio::SendDirect { prefix: conv, text }
+        // A MeshCore channel's key is "channel:<index>" (radio::convert::channel_conv).
+        let channel = conv.strip_prefix("channel:").and_then(|n| n.parse().ok());
+        Some(match channel {
+            _ if conv == self.public_conv() => ToRadio::SendChannel { channel: 0, text },
+            Some(channel) => ToRadio::SendChannel { channel, text },
+            None => ToRadio::SendDirect { prefix: conv, text },
         })
     }
 }

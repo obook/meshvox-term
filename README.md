@@ -141,7 +141,8 @@ works as over Bluetooth: messages, contacts, map and the radio settings.
 The screen has four tabs, as in the MeshVox Android app:
 
 - **1 Chats**: the public channel and the conversations, latest first, with
-  their last message; the open conversation on the right
+  their last message (a MeshCore channel under the name the radio gives it,
+  and you can write in it); the open conversation on the right
 - **2 Contacts**: the nodes, with the selected node's card. Four filters,
   as in MeshVox: Contacts (people), Favorites, Repeaters, All (with my
   radio), Contacts first; and the online, offline and total counts. The

@@ -8,6 +8,9 @@
 
 use std::collections::HashMap;
 
+use aes::cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit};
+use aes::Aes128;
+use sha2::Digest;
 use meshcore_rs::events::{ChannelMessage, Contact, ContactMessage};
 use meshcore_rs::parsing::hex_encode;
 
@@ -127,7 +130,6 @@ fn other_params(me: &meshcore_rs::events::SelfInfo, base: u8, share: u8) -> Vec<
 /// Key of a public region: the first 16 bytes of SHA-256("#" + name), as the firmware
 /// derives it (TransportKeyStore::getAutoKeyFor).
 fn region_key(name: &str) -> [u8; 16] {
-    use sha2::Digest;
     let digest = sha2::Sha256::digest(format!("#{name}"));
     let mut key = [0u8; 16];
     key.copy_from_slice(&digest[..16]);
@@ -243,6 +245,38 @@ pub(super) fn received_now() -> i64 {
 }
 
 /// Channel text arrives as "<sender>: <text>". Channel 0 is the public one.
+/// The key of a channel message I sent, to count its repeats: its channel and the timestamp
+/// the radio put in it.
+pub fn channel_tag(channel: u8, ts: u32) -> String {
+    format!("ch{channel}:{ts}")
+}
+
+/// A channel message read from a packet the radio heard (the LogData payload: channel hash,
+/// MAC, AES-128 blocks): its timestamp and "name: text"; None if `secret` is not its channel's.
+/// The MAC is not checked: a wrong key gives a text that no message of mine matches.
+pub fn group_text(payload: &[u8], secret: &[u8; 16]) -> Option<(u32, String)> {
+    let (&hash, rest) = payload.split_first()?;
+    let blocks = rest.get(2..)?;
+    if blocks.is_empty() || blocks.len() % 16 != 0 || hash != sha2::Sha256::digest(secret)[0] {
+        return None;
+    }
+    // ECB is what the firmware uses.
+    let cipher = Aes128::new(GenericArray::from_slice(secret));
+    let mut plain = blocks.to_vec();
+    for block in plain.chunks_exact_mut(16) {
+        cipher.decrypt_block(GenericArray::from_mut_slice(block));
+    }
+    let ts = u32::from_le_bytes(plain[..4].try_into().ok()?);
+    // Byte 4: the text type; the text is zero-padded to the block size.
+    let text = plain[5..].split(|&b| b == 0).next()?;
+    Some((ts, String::from_utf8_lossy(text).into_owned()))
+}
+
+/// The conversation key of MeshCore channel `idx` (1 and up; 0 is the public channel).
+pub fn channel_conv(idx: u8) -> String {
+    format!("channel:{idx}")
+}
+
 pub fn channel_msg(message: &ChannelMessage) -> Msg {
     let (from, text) = message
         .text
@@ -251,7 +285,7 @@ pub fn channel_msg(message: &ChannelMessage) -> Msg {
     let conv = if message.channel_idx == 0 {
         PUBLIC.to_string()
     } else {
-        format!("channel:{}", message.channel_idx)
+        channel_conv(message.channel_idx)
     };
     Msg {
         ts: received_now(),

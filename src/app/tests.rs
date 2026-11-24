@@ -99,6 +99,16 @@ fn contacts_are_sorted_by_name() {
 }
 
 #[test]
+fn a_channel_shows_its_name_from_the_radio() {
+    let mut app = App::new("x", vec![]);
+    app.apply(FromRadio::Record(incoming("channel:1", "yo")));
+    app.apply(FromRadio::Record(incoming("channel:2", "yo")));
+    app.apply(FromRadio::Channels(HashMap::from([("channel:1".into(), "#bordeaux".into())])));
+    // Equal stamps: the key orders the rows; channel 2 has no name yet.
+    assert_eq!(chat_labels(&app), ["# Public", "# bordeaux", "channel:2"]);
+}
+
+#[test]
 fn chats_list_public_then_latest_first_with_the_last_message() {
     let mut app = App::new("x", vec![]);
     app.apply(FromRadio::Nodes(vec![node(ALICE, "Alice", NodeKind::Chat, None)]));
@@ -199,17 +209,26 @@ fn ack_marks_received() {
         outgoing: true,
         ack: Some("01020304".into()),
     };
-    assert_eq!(app.status(&sent), Some("sent"));
+    assert_eq!(app.status(&sent), Some(Delivery::Sent));
     app.apply(FromRadio::Record(Record::Ack {
         tag: "01020304".into(),
     }));
-    assert_eq!(app.status(&sent), Some("received"));
+    assert_eq!(app.status(&sent), Some(Delivery::Received));
+    // A channel message has no receipt: the repeats my radio hears tell it went out.
     let public = Msg {
         conv: PUBLIC.into(),
-        ack: None,
-        ..sent
+        ack: Some("ch0:1700000000".into()),
+        ..sent.clone()
     };
-    assert_eq!(app.status(&public), None);
+    assert_eq!(app.status(&public), Some(Delivery::Sent));
+    for _ in 0..2 {
+        app.apply(FromRadio::Record(Record::Repeat {
+            tag: "ch0:1700000000".into(),
+        }));
+    }
+    assert_eq!(app.status(&public), Some(Delivery::Repeated(2)));
+    let meshtastic = Msg { ack: None, ..public };
+    assert_eq!(app.status(&meshtastic), None);
 }
 
 #[test]
@@ -218,7 +237,7 @@ fn enter_sends_to_the_open_conversation() {
     type_text(&mut app, "hi");
     assert_eq!(
         press(&mut app, KeyCode::Enter),
-        Some(ToRadio::SendPublic { text: "hi".into() })
+        Some(ToRadio::SendChannel { channel: 0, text: "hi".into() })
     );
     assert_eq!(app.input, "");
     app.chat = ALICE.into();
@@ -329,15 +348,23 @@ fn no_send_to_a_room() {
 }
 
 #[test]
-fn no_send_to_a_private_channel() {
+fn a_message_goes_to_its_meshcore_channel() {
     let mut app = connected();
     app.apply(FromRadio::Record(incoming("channel:1", "Bob: yo")));
     app.chat = "channel:1".into();
     type_text(&mut app, "hi");
+    assert_eq!(
+        press(&mut app, KeyCode::Enter),
+        Some(ToRadio::SendChannel { channel: 1, text: "hi".into() })
+    );
+    // Meshtastic channels other than the first are still read only.
+    app.apply(FromRadio::Firmware(Firmware::Meshtastic));
+    app.chat = "mt:channel:2".into();
+    type_text(&mut app, "hi");
     assert_eq!(press(&mut app, KeyCode::Enter), None);
     assert_eq!(
         app.notice.as_deref(),
-        Some("Messages to private channels are not supported")
+        Some("Messages to Meshtastic private channels are not supported")
     );
 }
 
@@ -936,7 +963,7 @@ fn enter_on_the_meshtastic_public_row_sends_public() {
     type_text(&mut app, "hi");
     assert_eq!(
         press(&mut app, KeyCode::Enter),
-        Some(ToRadio::SendPublic { text: "hi".into() })
+        Some(ToRadio::SendChannel { channel: 0, text: "hi".into() })
     );
 }
 

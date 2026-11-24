@@ -11,13 +11,14 @@ use std::sync::mpsc::Sender;
 
 use futures::StreamExt;
 use meshcore_rs::commands::Destination;
-use meshcore_rs::events::{EventPayload, EventType};
+use meshcore_rs::events::{EventPayload, EventType, LogData};
+use meshcore_rs::PayloadType;
 use meshcore_rs::parsing::hex_encode;
 use meshcore_rs::MeshCore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::convert::{
-    change_frame, channel_msg, contact_msg, gps_from_vars, gps_switch_from_vars, lipo_percent, map_body, map_data,
+    change_frame, channel_conv, channel_msg, channel_tag, contact_msg, group_text, gps_from_vars, gps_switch_from_vars, lipo_percent, map_body, map_data,
     my_radio, region_from_frame, CMD_GET_DEFAULT_REGION, MAP_UPLOAD_URL,
 };
 use super::link::now;
@@ -53,6 +54,13 @@ pub(super) async fn session(
     battery(radio, tx).await?;
     let mut names = contacts(radio, tx).await?;
     drain(radio, history, tx, &names).await?;
+    // Names and repeat counts are a comfort: a radio that does not give its channels still works.
+    let secrets = channels(radio, tx).await.unwrap_or_else(|e| {
+        tracing::info!("channels: {e}");
+        HashMap::new()
+    });
+    // My channel messages of this session, by tag: the repeats heard are matched against them.
+    let mut ours: HashMap<String, String> = HashMap::new();
 
     let mut tick = tokio::time::interval(CHECK_EVERY);
     tick.tick().await;
@@ -70,6 +78,11 @@ pub(super) async fn session(
                     EventType::Ack => {
                         if let EventPayload::Ack { tag } = event.payload {
                             save(history, tx, Record::Ack { tag: hex_encode(&tag) })?;
+                        }
+                    }
+                    EventType::LogData => {
+                        if let EventPayload::LogData(log) = &event.payload {
+                            heard(log, &secrets, &ours, history, tx)?;
                         }
                     }
                     EventType::Disconnected => return Ok(true),
@@ -97,7 +110,7 @@ pub(super) async fn session(
                     });
                     continue;
                 }
-                if let Err(e) = send(radio, history, tx, &cmd).await {
+                if let Err(e) = send(radio, history, tx, &cmd, &mut ours).await {
                     // Sent but not saved: the message is shown, do not invite a resend.
                     if e.is::<HistoryWriteFailed>() {
                         return Err(e);
@@ -265,6 +278,50 @@ pub(super) async fn contacts(
     Ok(names)
 }
 
+/// Send the names of the radio's channels to the UI (the public one keeps its own); return
+/// the secret of each channel, by index. An empty slot has no name.
+async fn channels(radio: &MeshCore, tx: &Sender<FromRadio>) -> anyhow::Result<HashMap<u8, [u8; 16]>> {
+    // Past max_channels the firmware answers an error, which meshcore-rs only sees as a timeout.
+    let dev = radio.commands().lock().await.send_device_query().await?;
+    let mut names = HashMap::new();
+    let mut secrets = HashMap::new();
+    for idx in 0..dev.max_channels.unwrap_or(0) {
+        let info = radio.commands().lock().await.get_channel(idx).await?;
+        if !info.name.is_empty() {
+            secrets.insert(idx, info.secret);
+            if idx > 0 {
+                names.insert(channel_conv(idx), info.name);
+            }
+        }
+    }
+    let _ = tx.send(FromRadio::Channels(names));
+    Ok(secrets)
+}
+
+/// Count a repeat when a packet the radio heard is one of my channel messages, relayed.
+fn heard(
+    log: &LogData,
+    secrets: &HashMap<u8, [u8; 16]>,
+    ours: &HashMap<String, String>,
+    history: &Path,
+    tx: &Sender<FromRadio>,
+) -> anyhow::Result<()> {
+    if !matches!(&log.header, Some(h) if matches!(h.payload_type, PayloadType::GroupText)) {
+        return Ok(());
+    }
+    for (&channel, secret) in secrets {
+        let Some((ts, text)) = group_text(&log.payload, secret) else {
+            continue;
+        };
+        let tag = channel_tag(channel, ts);
+        // The radio sends "name: text".
+        if ours.get(&tag).is_some_and(|mine| text.ends_with(&format!(": {mine}"))) {
+            save(history, tx, Record::Repeat { tag })?;
+        }
+    }
+    Ok(())
+}
+
 /// Fetch every waiting message. The radio forgets a message once fetched, so each one is
 /// written to disk before the next fetch.
 pub(super) async fn drain(
@@ -300,6 +357,7 @@ pub(super) async fn send(
     history: &Path,
     tx: &Sender<FromRadio>,
     cmd: &ToRadio,
+    ours: &mut HashMap<String, String>,
 ) -> anyhow::Result<()> {
     let ts = chrono::Utc::now().timestamp();
     let msg = match cmd {
@@ -319,20 +377,31 @@ pub(super) async fn send(
                 ack: Some(hex_encode(&info.expected_ack)),
             }
         }
-        ToRadio::SendPublic { text } => {
+        ToRadio::SendChannel { channel, text } => {
+            // My timestamp, not the radio's: the repeats heard carry it.
+            let sent_at = ts as u32;
             radio
                 .commands()
                 .lock()
                 .await
-                .send_channel_msg(0, text, None)
+                .send_channel_msg(*channel, text, Some(sent_at))
                 .await?;
+            let tag = channel_tag(*channel, sent_at);
+            // Repeats come within seconds: an old message no longer needs its entry.
+            if ours.len() >= 64 {
+                ours.clear();
+            }
+            ours.insert(tag.clone(), text.clone());
             Msg {
                 ts,
-                conv: PUBLIC.into(),
+                conv: match channel {
+                    0 => PUBLIC.into(),
+                    n => channel_conv(*n),
+                },
                 from: "me".into(),
                 text: text.clone(),
                 outgoing: true,
-                ack: None,
+                ack: Some(tag),
             }
         }
         // Ping and Refresh: handled by the session loop; Pair: ends the session; Pin: only

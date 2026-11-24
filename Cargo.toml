@@ -18,6 +18,8 @@ clap = { version = "4", features = ["derive"] }
 futures = "0.3"
 # Smooth text for the Normal map's labels (DejaVu Sans, bundled in assets/fonts).
 ab_glyph = "0.2"
+# MeshCore channel packets the radio hears: read to count the repeats of my messages.
+aes = "0.8"
 # Map tiles: PNG decoding and composing.
 image = { version = "0.25", default-features = false, features = ["png"] }
 meshcore-rs = { version = "0.2.0", default-features = false, features = ["ble", "serial"] }

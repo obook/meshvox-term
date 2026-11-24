@@ -18,6 +18,8 @@ mod task;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
+
 use crate::geo::Pos;
 use crate::history::{Record, PUBLIC};
 pub use convert::lipo_percent;
@@ -82,6 +84,8 @@ pub enum FromRadio {
     Battery(Battery),
     MyRadio(MyRadio),
     Nodes(Vec<Node>),
+    /// The names of the radio's channels, by conversation key.
+    Channels(HashMap<String, String>),
     Record(Record),
     /// The radio did not take the message: `conv` and `text` let the UI give it back.
     SendFailed {
@@ -148,7 +152,9 @@ pub enum ToRadio {
         prefix: String,
         text: String,
     },
-    SendPublic {
+    /// A message on a channel; 0 is the public one.
+    SendChannel {
+        channel: u8,
         text: String,
     },
     /// Status request to a repeater or room; `key` is its full public key in hex.
@@ -198,7 +204,8 @@ impl ToRadio {
     pub fn failed(&self, error: String) -> FromRadio {
         let (conv, text) = match self {
             ToRadio::SendDirect { prefix, text } => (prefix.clone(), text.clone()),
-            ToRadio::SendPublic { text } => (PUBLIC.to_string(), text.clone()),
+            ToRadio::SendChannel { channel: 0, text } => (PUBLIC.to_string(), text.clone()),
+            ToRadio::SendChannel { channel, text } => (convert::channel_conv(*channel), text.clone()),
             ToRadio::Ping { prefix, .. } => {
                 return FromRadio::Pong {
                     prefix: prefix.clone(),

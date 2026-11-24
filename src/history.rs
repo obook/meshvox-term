@@ -39,6 +39,8 @@ pub struct Msg {
 pub enum Record {
     Msg(Msg),
     Ack { tag: String },
+    /// My radio heard a repeater relay my channel message `tag` (radio::convert::channel_tag).
+    Repeat { tag: String },
 }
 
 /// Move the folder of a former project name ("loraterm", "meshcore-m5") to the new one, once:

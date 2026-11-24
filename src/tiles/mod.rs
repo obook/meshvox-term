@@ -22,7 +22,7 @@ use image::RgbaImage;
 
 use crate::config::{IGN_URL, TILES_IN_MEMORY, TILE_MAX_AGE, TILE_RETRY, TILE_URL, TILE_USER_AGENT};
 pub use compose::{compose, ring_px, sweep, Look, Mark, SWEEP_STEPS};
-pub use icons::{initials, Icon};
+pub use icons::{initials, name_color, Icon};
 
 type Key = (u8, u32, u32);
 
